@@ -1,0 +1,18 @@
+[
+    {
+        "id": 1,
+        "name": "Boston Pizza",
+        "cuisine": "Pizza",
+        "address": "123 Kelowna Road",
+        "rating": 3.3,
+        "is_open": true
+    },
+    {
+        "id": 2,
+        "name": "Taco Bell",
+        "cuisine": "Mexican",
+        "address": "456 Okanagan Drive",
+        "rating": 2.9,
+        "is_open": true
+    }
+]
