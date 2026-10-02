@@ -132,8 +132,6 @@ python -m pytest -q
 
 Milestone 0 requires tests for the health endpoint, restaurant-list endpoint, repository behavior, and at least one invalid or failure case. Tests should use temporary data, set `DATA_DIR` when needed, and never modify `data/restaurants.json`.
 
-**Current repository status:** `test/test_health.py` is empty at the audited commit. Add the required tests before creating the `foundation-gate` submission tag.
-
 ## Repository Structure
 
 ```text
