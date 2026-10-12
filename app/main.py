@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.routes import restaurants
+from app.api.routes import menu, restaurants
 
 app = FastAPI(title="Food Delivery API")
 
@@ -11,3 +11,4 @@ def health():
 
 
 app.include_router(restaurants.router)
+app.include_router(menu.router)

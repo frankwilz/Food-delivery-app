@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.routes import restaurants as restaurants_route
+from app.core import config
 from app.core.config import BASE_DIR
 from app.main import app
 
@@ -15,7 +16,12 @@ def isolated_data(tmp_path, monkeypatch):
     shutil.copy(REAL_DATA / "restaurants.json", tmp_path / "restaurants.json")
     monkeypatch.setattr(restaurants_route, "RESTAURANTS_FILE", tmp_path / "restaurants.json")
 
+    # Menu data (menu routes read their paths from app.core.config at request time)
+    shutil.copy(REAL_DATA / "menu_items.json", tmp_path / "menu_items.json")
+    monkeypatch.setattr(config, "RESTAURANTS_FILE", tmp_path / "restaurants.json")
+    monkeypatch.setattr(config, "MENU_ITEMS_FILE", tmp_path / "menu_items.json")
+
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    return TestClient(app)

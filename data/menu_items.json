@@ -1,0 +1,65 @@
+[
+    {
+        "id": 1,
+        "restaurant_id": 1,
+        "name": "Pepperoni Pizza",
+        "description": "Classic pepperoni with mozzarella on a hand-tossed crust",
+        "price": 16.99,
+        "category": "Pizza",
+        "is_available": true
+    },
+    {
+        "id": 2,
+        "restaurant_id": 1,
+        "name": "Margherita Pizza",
+        "description": "Tomato sauce, fresh mozzarella and basil",
+        "price": 15.49,
+        "category": "Pizza",
+        "is_available": true
+    },
+    {
+        "id": 3,
+        "restaurant_id": 1,
+        "name": "Caesar Salad",
+        "description": "Romaine, parmesan, croutons and Caesar dressing",
+        "price": 9.99,
+        "category": "Salad",
+        "is_available": true
+    },
+    {
+        "id": 4,
+        "restaurant_id": 1,
+        "name": "Chicken Wings",
+        "description": "One pound of wings with a choice of sauce",
+        "price": 14.29,
+        "category": "Appetizer",
+        "is_available": false
+    },
+    {
+        "id": 5,
+        "restaurant_id": 2,
+        "name": "Crunchy Taco",
+        "description": "Seasoned beef, lettuce and cheddar in a crunchy shell",
+        "price": 2.49,
+        "category": "Tacos",
+        "is_available": true
+    },
+    {
+        "id": 6,
+        "restaurant_id": 2,
+        "name": "Chicken Quesadilla",
+        "description": "Grilled tortilla with chicken and three-cheese blend",
+        "price": 6.99,
+        "category": "Specialties",
+        "is_available": true
+    },
+    {
+        "id": 7,
+        "restaurant_id": 2,
+        "name": "Nachos BellGrande",
+        "description": "Tortilla chips with beef, beans, nacho cheese and sour cream",
+        "price": 7.49,
+        "category": "Sides",
+        "is_available": true
+    }
+]

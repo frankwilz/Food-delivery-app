@@ -57,6 +57,10 @@ The API is available at `http://127.0.0.1:8000` by default. Stop the server with
 | --- | --- | --- |
 | `GET` | `/health` | Confirms that the API is running. |
 | `GET` | `/restaurants` | Returns all representative restaurants. |
+| `GET` | `/restaurants/{restaurant_id}/menu` | Returns all menu items for a restaurant (404 if the restaurant does not exist). |
+| `GET` | `/restaurants/{restaurant_id}/menu/{item_id}` | Returns one menu item (404 if missing or owned by another restaurant). |
+| `POST` | `/restaurants/{restaurant_id}/menu` | Adds a menu item; the server assigns the id (201, 404, 409 duplicate name, 422 invalid body). |
+| `PATCH` | `/restaurants/{restaurant_id}/menu/{item_id}` | Partially updates a menu item (200, 400 empty body, 404, 409, 422). |
 | `GET` | `/docs` | Opens FastAPI's interactive Swagger UI. |
 | `GET` | `/openapi.json` | Returns the generated OpenAPI schema. |
 
@@ -102,6 +106,38 @@ Each layer has one responsibility:
 
 The route does not read the JSON file directly.
 
+## Menu Functionality
+
+Menu requests follow the same layered path as restaurants:
+
+```text
+GET/POST/PATCH /restaurants/{restaurant_id}/menu[/{item_id}]
+  -> FastAPI routes in app/api/routes/menu.py
+  -> MenuService in app/services/menu_service.py
+  -> MenuRepository in app/repositories/menu_repository.py
+  -> data/menu_items.json
+```
+
+- **Schemas** (`app/schemas/menu_item.py`): `MenuItem` (response), `MenuItemCreate` (POST body, no `id`/`restaurant_id`), `MenuItemUpdate` (PATCH body, all fields optional).
+- **Fields:** `id`, `restaurant_id`, `name`, `description`, `price` (> 0), `category`, `is_available`.
+- **Service rules:** the restaurant must exist; an item is only reachable through the restaurant that owns it; item names are unique per restaurant (case-insensitive); an empty PATCH is rejected.
+- **Repository:** the only code that reads/writes `data/menu_items.json`. New ids are `max(existing ids) + 1`; `id` and `restaurant_id` are never overwritten. Writes go to a temp file and are then atomically swapped in.
+
+Example — add an item:
+
+```bash
+curl -X POST http://127.0.0.1:8000/restaurants/1/menu \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Garlic Bread", "price": 6.49, "category": "Appetizer"}'
+```
+
+### Design decision: menu storage
+
+Menu items are stored in their **own file** (`data/menu_items.json`) and linked to restaurants by `restaurant_id`, rather than nested inside each restaurant in `restaurants.json`.
+
+- **Why:** restaurant and menu code can be developed, tested and changed independently (separate repositories, no merge conflicts on one file); updating one menu item does not rewrite every restaurant; item ids are globally unique, so an item can be addressed directly.
+- **Trade-off:** the link is not enforced by the file format, so the service checks that the restaurant exists before every menu operation, and a test (`test_committed_menu_data_is_valid_and_consistent`) checks that every `restaurant_id` in the data points to a real restaurant.
+
 ## Configuration
 
 The default data directory is `data/` at the repository root. Set the `DATA_DIR` environment variable to use a different directory without changing application code:
@@ -110,7 +146,7 @@ The default data directory is `data/` at the repository root. Set the `DATA_DIR`
 DATA_DIR=/absolute/path/to/test-data python -m uvicorn app.main:app --reload
 ```
 
-The configured directory must contain a file named `restaurants.json`. This setting allows automated tests to use isolated temporary data instead of modifying the committed representative data.
+The configured directory must contain `restaurants.json` and `menu_items.json`. This setting allows automated tests to use isolated temporary data instead of modifying the committed representative data.
 
 ## Representative Data
 
