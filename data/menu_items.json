@@ -1,0 +1,47 @@
+[
+    {
+        "id": 1,
+        "restaurant_id": 1,
+        "name": "Pepperoni Pizza",
+        "description": "Classic pizza with mozzarella and pepperoni",
+        "price": 16.99,
+        "category": "Pizza",
+        "is_available": true
+    },
+    {
+        "id": 2,
+        "restaurant_id": 1,
+        "name": "Caesar Salad",
+        "description": "Romaine, parmesan, croutons and Caesar dressing",
+        "price": 9.49,
+        "category": "Salads",
+        "is_available": true
+    },
+    {
+        "id": 3,
+        "restaurant_id": 1,
+        "name": "Chicken Wings",
+        "description": "One pound of wings with your choice of sauce",
+        "price": 13.99,
+        "category": "Appetizers",
+        "is_available": false
+    },
+    {
+        "id": 4,
+        "restaurant_id": 2,
+        "name": "Crunchwrap Supreme",
+        "description": "Seasoned beef, nacho cheese and a crunchy tostada shell",
+        "price": 6.49,
+        "category": "Mains",
+        "is_available": true
+    },
+    {
+        "id": 5,
+        "restaurant_id": 2,
+        "name": "Cinnamon Twists",
+        "description": "Crispy twists dusted with cinnamon sugar",
+        "price": 2.29,
+        "category": "Desserts",
+        "is_available": true
+    }
+]
