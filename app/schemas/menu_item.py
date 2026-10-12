@@ -39,3 +39,9 @@ class MenuItemUpdate(BaseModel):
         if value is None:
             raise ValueError("field cannot be null")
         return value
+
+
+class ErrorResponse(BaseModel):
+    """Body of every error returned by the menu endpoints, e.g. {"detail": "Restaurant 9 not found"}."""
+
+    detail: str

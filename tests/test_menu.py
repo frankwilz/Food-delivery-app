@@ -4,6 +4,9 @@ import pytest
 
 from app.core.config import BASE_DIR
 from app.repositories.menu_item_repository import MenuItemRepository
+from app.repositories.restaurant_repository import RestaurantRepository
+from app.schemas.menu_item import MenuItem, MenuItemCreate
+from app.services.menu_service import MenuService
 
 VALID_ITEM = {
     "name": "Garlic Bread",
@@ -278,3 +281,112 @@ def test_repository_missing_file_raises_error(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         repository.get_all()
+
+
+# --- Duplicate names (409) ---
+
+
+def test_create_duplicate_name_returns_409(client):
+    # Same name as item 1, different case and extra spaces
+    response = client.post("/restaurants/1/menu", json={**VALID_ITEM, "name": "  pepperoni PIZZA "})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Restaurant 1 already has a menu item named 'pepperoni PIZZA'"
+    assert len(client.get("/restaurants/1/menu").json()) == 3
+
+
+def test_same_name_allowed_at_a_different_restaurant(client):
+    response = client.post("/restaurants/2/menu", json={**VALID_ITEM, "name": "Pepperoni Pizza"})
+
+    assert response.status_code == 201
+
+
+def test_update_to_duplicate_name_returns_409(client):
+    response = client.patch("/restaurants/1/menu/2", json={"name": "Chicken Wings"})
+
+    assert response.status_code == 409
+    assert client.get("/restaurants/1/menu/2").json()["name"] == "Caesar Salad"
+
+
+def test_update_keeping_own_name_is_allowed(client):
+    response = client.patch("/restaurants/1/menu/2", json={"name": "Caesar Salad", "price": 9.99})
+
+    assert response.status_code == 200
+    assert response.json()["price"] == 9.99
+
+
+# --- Empty update (400) ---
+
+
+def test_update_with_empty_body_returns_400(client):
+    response = client.patch("/restaurants/1/menu/1", json={})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Update request must include at least one field"
+
+
+# --- Repository safety ---
+
+
+def test_repository_update_never_changes_identifiers(tmp_path):
+    repository = MenuItemRepository(tmp_path / "menu_items.json")
+
+    updated = repository.update(1, {"id": 42, "restaurant_id": 2, "price": 1.5})
+
+    assert updated["id"] == 1
+    assert updated["restaurant_id"] == 1
+    assert updated["price"] == 1.5
+
+
+def test_repository_save_leaves_no_temp_files(tmp_path):
+    repository = MenuItemRepository(tmp_path / "menu_items.json")
+
+    repository.create({"restaurant_id": 1, "name": "Soda", "price": 1.99})
+    repository.update(1, {"price": 2.0})
+
+    assert list(tmp_path.glob("*.tmp")) == []
+    json.loads((tmp_path / "menu_items.json").read_text(encoding="utf-8"))  # still valid JSON
+
+
+# --- Persistence and data integrity ---
+
+
+def test_data_survives_restart(tmp_path):
+    """A brand-new service (as after a server restart) sees what the previous one saved."""
+
+    def new_service():
+        return MenuService(
+            MenuItemRepository(tmp_path / "menu_items.json"),
+            RestaurantRepository(tmp_path / "restaurants.json"),
+        )
+
+    created = new_service().create_menu_item(1, MenuItemCreate(**VALID_ITEM))
+
+    assert new_service().get_menu_item(1, created["id"]) == created
+
+
+def test_committed_menu_data_is_valid_and_consistent():
+    """Every item in data/menu_items.json is a valid MenuItem, ids are unique,
+    names are unique per restaurant, and every restaurant_id points to a real restaurant."""
+    items = json.loads((BASE_DIR / "data" / "menu_items.json").read_text(encoding="utf-8"))
+    restaurants = json.loads((BASE_DIR / "data" / "restaurants.json").read_text(encoding="utf-8"))
+    restaurant_ids = {restaurant["id"] for restaurant in restaurants}
+
+    for item in items:
+        MenuItem(**item)
+    assert len({item["id"] for item in items}) == len(items)
+    assert len({(item["restaurant_id"], item["name"].casefold()) for item in items}) == len(items)
+    assert all(item["restaurant_id"] in restaurant_ids for item in items)
+
+
+# --- API documentation ---
+
+
+def test_menu_error_responses_are_documented(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    menu = paths["/restaurants/{restaurant_id}/menu"]
+    item = paths["/restaurants/{restaurant_id}/menu/{item_id}"]
+
+    assert "404" in menu["get"]["responses"]
+    assert {"201", "404", "409", "422"} <= menu["post"]["responses"].keys()
+    assert {"200", "400", "404", "409", "422"} <= item["patch"]["responses"].keys()

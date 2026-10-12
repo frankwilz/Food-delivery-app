@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 from pathlib import Path
 
 
@@ -32,12 +34,22 @@ class MenuItemRepository:
         items = self.get_all()
         for item in items:
             if item["id"] == item_id:
-                item.update(changes)
+                # Identifiers are never overwritten, so ids stay stable
+                item.update({k: v for k, v in changes.items() if k not in ("id", "restaurant_id")})
                 self._save(items)
                 return item
         return None
 
     def _save(self, items: list[dict]) -> None:
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            json.dump(items, f, indent=4)
-            f.write("\n")
+        # Write to a temp file in the same folder, then swap it in with os.replace (atomic),
+        # so a crash mid-write cannot leave a half-written, corrupt JSON file behind
+        fd, tmp_name = tempfile.mkstemp(dir=Path(self.file_path).parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(items, f, indent=4)
+                f.write("\n")
+            os.replace(tmp_name, self.file_path)
+        except BaseException:
+            if os.path.exists(tmp_name):
+                os.remove(tmp_name)
+            raise
