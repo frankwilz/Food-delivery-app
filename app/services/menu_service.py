@@ -17,6 +17,16 @@ class MenuItemNotFoundError(NotFoundError):
         super().__init__(f"Menu item {item_id} not found for restaurant {restaurant_id}")
 
 
+class DuplicateMenuItemError(Exception):
+    def __init__(self, restaurant_id: int, name: str):
+        super().__init__(f"Restaurant {restaurant_id} already has a menu item named '{name}'")
+
+
+class EmptyUpdateError(Exception):
+    def __init__(self):
+        super().__init__("Update request must include at least one field")
+
+
 class MenuService:
     def __init__(
         self,
@@ -40,13 +50,26 @@ class MenuService:
 
     def create_menu_item(self, restaurant_id: int, item: MenuItemCreate) -> dict:
         self._ensure_restaurant_exists(restaurant_id)
+        self._ensure_name_unique(restaurant_id, item.name)
         return self.menu_repository.create({"restaurant_id": restaurant_id, **item.model_dump()})
 
     def update_menu_item(self, restaurant_id: int, item_id: int, changes: MenuItemUpdate) -> dict:
+        fields = changes.model_dump(exclude_unset=True)
+        if not fields:
+            raise EmptyUpdateError()
         self.get_menu_item(restaurant_id, item_id)
-        return self.menu_repository.update(item_id, changes.model_dump(exclude_unset=True))
+        if "name" in fields:
+            self._ensure_name_unique(restaurant_id, fields["name"], ignore_item_id=item_id)
+        return self.menu_repository.update(item_id, fields)
 
     def _ensure_restaurant_exists(self, restaurant_id: int) -> None:
         restaurants = self.restaurant_repository.get_all()
         if not any(restaurant["id"] == restaurant_id for restaurant in restaurants):
             raise RestaurantNotFoundError(restaurant_id)
+
+    def _ensure_name_unique(self, restaurant_id: int, name: str, ignore_item_id: int | None = None) -> None:
+        # Names are compared case-insensitively, so "pepperoni pizza" clashes with "Pepperoni Pizza"
+        wanted = name.strip().casefold()
+        for existing in self.menu_repository.get_by_restaurant_id(restaurant_id):
+            if existing["id"] != ignore_item_id and existing["name"].strip().casefold() == wanted:
+                raise DuplicateMenuItemError(restaurant_id, name)
