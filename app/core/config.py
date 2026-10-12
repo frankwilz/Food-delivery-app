@@ -8,3 +8,4 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 
 RESTAURANTS_FILE = DATA_DIR / "restaurants.json"
+MENU_ITEMS_FILE = DATA_DIR / "menu_items.json"
