@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.error import ErrorResponse  # noqa: F401  (shared error model, re-exported for menu routes)
+
 
 class MenuItemBase(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -39,9 +41,3 @@ class MenuItemUpdate(BaseModel):
         if value is None:
             raise ValueError("field cannot be null")
         return value
-
-
-class ErrorResponse(BaseModel):
-    """Body of every error returned by the menu endpoints, e.g. {"detail": "Restaurant 9 not found"}."""
-
-    detail: str

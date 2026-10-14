@@ -56,7 +56,10 @@ The API is available at `http://127.0.0.1:8000` by default. Stop the server with
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Confirms that the API is running. |
-| `GET` | `/restaurants` | Returns all representative restaurants. |
+| `GET` | `/restaurants` | Lists restaurants. Optional filters: `search`, `cuisine`, `is_open`, `min_rating` (422 for invalid values). |
+| `GET` | `/restaurants/{restaurant_id}` | Returns one restaurant's details (404 if it does not exist). |
+| `POST` | `/restaurants` | Creates a restaurant; the server assigns the id (201; 409 duplicate name + address; 422 invalid body). |
+| `PATCH` | `/restaurants/{restaurant_id}` | Partially updates a restaurant (200; 400 empty body; 404; 409 duplicate; 422). |
 | `GET` | `/restaurants/{restaurant_id}/menu` | Returns all menu items for a restaurant (404 if the restaurant does not exist). |
 | `GET` | `/restaurants/{restaurant_id}/menu/{item_id}` | Returns one menu item (404 if missing or owned by another restaurant). |
 | `POST` | `/restaurants/{restaurant_id}/menu` | Adds a menu item; the server assigns the id (201; 404; 409 duplicate name; 422 invalid body). |
@@ -76,20 +79,41 @@ Expected response:
 {"status":"ok"}
 ```
 
-Example restaurant request:
+Example restaurant requests:
 
 ```bash
 curl http://127.0.0.1:8000/restaurants
+curl "http://127.0.0.1:8000/restaurants?search=pizza&min_rating=4"
+curl http://127.0.0.1:8000/restaurants/2
+curl -X POST http://127.0.0.1:8000/restaurants \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Kelowna Curry House", "cuisine": "Indian", "address": "55 Pandosy Street", "rating": 4.4}'
+curl -X PATCH http://127.0.0.1:8000/restaurants/2 \
+  -H "Content-Type: application/json" \
+  -d '{"is_open": false}'
 ```
 
-The restaurant endpoint returns objects with the following Pydantic fields: `id`, `name`, `cuisine`, `address`, `rating`, and `is_open`.
+Restaurant endpoints return the `Restaurant` Pydantic model: `id`, `name`, `cuisine`, `address`, `rating` (0 to 5), and `is_open`.
+
+### Search and filter
+
+`GET /restaurants` accepts optional query parameters, which can be combined (all must match):
+
+| Parameter | Meaning |
+| --- | --- |
+| `search` | Name **or** cuisine contains this text (case-insensitive), e.g. `?search=pizz`. |
+| `cuisine` | Cuisine is exactly this value (case-insensitive), e.g. `?cuisine=Mexican`. |
+| `is_open` | `true` or `false`. |
+| `min_rating` | Rating is at least this value (0 to 5). |
+
+No matches returns `200` with an empty list.
 
 ## Architecture
 
-The restaurant-list request follows the required layered path:
+Restaurant requests follow the required layered path:
 
 ```text
-GET /restaurants
+GET/POST /restaurants, GET/PATCH /restaurants/{restaurant_id}
   -> FastAPI route in app/api/routes/restaurants.py
   -> RestaurantService in app/services/restaurant_service.py
   -> RestaurantRepository in app/repositories/restaurant_repository.py
@@ -99,10 +123,10 @@ GET /restaurants
 Each layer has one responsibility:
 
 - **Route:** Handles the HTTP endpoint, dependency creation, and response model.
-- **Service:** Coordinates the restaurant-list operation.
-- **Repository:** Reads restaurant records from the configured JSON file.
-- **Persistence:** Stores representative restaurant data in `data/restaurants.json`.
-- **Schema:** Defines the API response contract in `app/schemas/restaurant.py`.
+- **Service:** Holds the business rules: search/filter logic, 404 for unknown ids, no duplicate restaurant (same name **and** address, case-insensitive, so chains at different addresses are allowed), and no empty updates.
+- **Repository:** The only code that reads or writes the JSON file: `get_all`, `get_by_id`, `create`, `update`. New ids are `max(existing ids) + 1` and the id is never overwritten, so ids stay stable and menu items keep pointing at the right restaurant. Each save writes a temporary file and swaps it in with `os.replace`, so a crash cannot leave a half-written file.
+- **Persistence:** Stores restaurant data in `data/restaurants.json`.
+- **Schema:** `app/schemas/restaurant.py` defines `Restaurant` (response), `RestaurantCreate` (POST body, no `id`) and `RestaurantUpdate` (PATCH body, every field optional, `null` rejected). Errors use the shared `ErrorResponse` model in `app/schemas/error.py`.
 
 The route does not read the JSON file directly.
 
@@ -156,7 +180,7 @@ Representative restaurant data is stored in:
 data/restaurants.json
 ```
 
-The committed file contains two restaurant records with stable integer identifiers.
+The committed file contains four restaurant records with stable integer identifiers (two Pizza, one Mexican, one Japanese; one closed), so search and filters can be demonstrated.
 
 ## Tests
 

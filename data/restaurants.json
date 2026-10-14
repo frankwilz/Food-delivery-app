@@ -14,5 +14,21 @@
         "address": "456 Okanagan Drive",
         "rating": 2.9,
         "is_open": true
+    },
+    {
+        "id": 3,
+        "name": "Okanagan Sushi",
+        "cuisine": "Japanese",
+        "address": "789 Bernard Avenue",
+        "rating": 4.6,
+        "is_open": false
+    },
+    {
+        "id": 4,
+        "name": "Lakeside Pizzeria",
+        "cuisine": "Pizza",
+        "address": "12 Water Street",
+        "rating": 4.1,
+        "is_open": true
     }
 ]
