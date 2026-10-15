@@ -1,4 +1,7 @@
 # Food Delivery App
+
+[![Tests](https://github.com/frankwilz/Food-delivery-app/actions/workflows/tests.yml/badge.svg)](https://github.com/frankwilz/Food-delivery-app/actions/workflows/tests.yml)
+
 Food Delivery App is a team project that currently provides the Milestone 0 backend foundation. The repository contains a FastAPI application, a layered restaurant-list operation, JSON persistence, Pydantic response models, and a team agreement. The backend exposes health, restaurant, and interactive API-documentation endpoints.
 
 **Team name:** Abdul & Friends
@@ -162,6 +165,18 @@ Menu items are stored in their **own file** (`data/menu_items.json`) and linked 
 - **Why:** restaurant and menu code can be built and tested independently (separate repositories, no edits to the same file); updating one menu item does not rewrite every restaurant; item ids are unique across all restaurants, so an item can be addressed directly.
 - **Trade-off:** JSON does not enforce the link, so the service checks that the restaurant exists before every menu operation, and `test_committed_menu_data_is_valid_and_consistent` checks that every `restaurant_id` in the data points to a real restaurant.
 
+## Error Handling
+
+Every error response is JSON with the shared `ErrorResponse` shape, `{"detail": "..."}`, and every error status is listed in `/docs`.
+
+| Status | When |
+| --- | --- |
+| `400` | A `PATCH` body contains no fields. |
+| `404` | The restaurant or menu item does not exist, or the menu item belongs to another restaurant. |
+| `409` | A create or update would duplicate a restaurant (name + address) or a menu item name at the same restaurant. |
+| `422` | Invalid input: a wrong type, a value out of range, a missing required field, an unknown or server-assigned field (`id`, `restaurant_id`), `null` in a `PATCH`, or malformed JSON. For `422` responses, `detail` is FastAPI's list of validation errors. |
+| `500` | A data file is missing, unreadable or corrupt. The client receives `{"detail": "Data storage error"}`, and the full error is written to the server log. |
+
 ## Configuration
 
 The default data directory is `data/` at the repository root. Set the `DATA_DIR` environment variable to use a different directory without changing application code:
@@ -190,25 +205,49 @@ Run the test suite from the repository root:
 python -m pytest -q
 ```
 
-Milestone 0 requires tests for the health endpoint, restaurant-list endpoint, repository behavior, and at least one invalid or failure case. Tests should use temporary data, set `DATA_DIR` when needed, and never modify `data/restaurants.json`.
+| File | Covers |
+| --- | --- |
+| `tests/test_health.py` | `GET /health`. |
+| `tests/test_restaurants.py` | Restaurant endpoints, search and filters, validation, the repository and service, and committed data integrity. |
+| `tests/test_menu.py` | Menu endpoints, validation, duplicate names, the repository, and committed data integrity. |
+| `tests/test_integration.py` | The complete vertical slice (restaurant + menu through every layer to the JSON files), error handling (`404`/`405`/`422`/JSON `500`), API documentation, and **persistence across a real restart**: the test starts `uvicorn` with `DATA_DIR` set to a temporary folder, writes data, stops the server, starts it again and reads the data back. |
+
+**Isolated test data:** `tests/conftest.py` copies `data/restaurants.json` and `data/menu_items.json` into a fresh temporary folder before **every** test and points the routes at those copies. Tests can create and update freely without changing the committed data or affecting each other. Several tests check that the files in `data/` are unchanged afterwards.
+
+**Continuous integration:** `.github/workflows/tests.yml` runs `pytest` with GitHub Actions on Python 3.11 and 3.13 for every pull request and every push to `main`. It then checks that `data/` was not modified. A pull request should only be merged when this check is green.
 
 ## Repository Structure
 
 ```text
 Food-delivery-app/
+├── .github/workflows/tests.yml     # CI: runs pytest on every PR
 ├── app/
-│   ├── api/routes/restaurants.py
-│   ├── core/config.py
-│   ├── repositories/restaurant_repository.py
-│   ├── schemas/restaurant.py
-│   ├── services/restaurant_service.py
-│   └── main.py
+│   ├── api/routes/
+│   │   ├── menu.py
+│   │   └── restaurants.py
+│   ├── core/config.py              # DATA_DIR and data file paths
+│   ├── repositories/
+│   │   ├── menu_item_repository.py
+│   │   └── restaurant_repository.py
+│   ├── schemas/
+│   │   ├── error.py
+│   │   ├── menu_item.py
+│   │   └── restaurant.py
+│   ├── services/
+│   │   ├── menu_service.py
+│   │   └── restaurant_service.py
+│   └── main.py                     # app, /health, storage-error handler
 ├── data/
+│   ├── menu_items.json
 │   └── restaurants.json
 ├── scrum/
 │   └── team-agreement.md
-├── test/
-│   └── test_health.py
+├── tests/
+│   ├── conftest.py                 # isolated temporary data for every test
+│   ├── test_health.py
+│   ├── test_integration.py
+│   ├── test_menu.py
+│   └── test_restaurants.py
 ├── README.md
 └── requirements.txt
 ```
@@ -222,3 +261,12 @@ Food-delivery-app/
 5. Commit all final files and push them to GitHub.
 6. Create and push the required `foundation-gate` tag.
 7. Record the tag URL and its full commit SHA in the submission PDF.
+
+## Provenance
+
+Record where each contribution came from, including any AI assistance, before submission.
+
+| Area | Author(s) | Assistance and sources |
+| --- | --- | --- |
+| Testing, CI and integration: `.github/workflows/tests.yml`, `tests/test_integration.py`, the storage-error handler in `app/main.py`, and README updates | Frank Williams | Drafted with Claude Code (AI coding assistant), then reviewed and run locally by Frank Williams |
+| _Other areas_ | _Team member_ | _To be completed by each member_ |
