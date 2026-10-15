@@ -1,9 +1,11 @@
 name: Tests
 
+# Runs on every push to any branch and on every pull request, so each feature branch
+# and PR shows a pass/fail check in the Actions tab
 on:
   push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   pytest:

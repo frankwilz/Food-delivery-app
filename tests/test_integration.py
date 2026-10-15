@@ -122,7 +122,12 @@ def test_every_endpoint_is_documented(client):
     for operations in paths.values():
         for operation in operations.values():
             assert operation["summary"]
+            assert operation["description"]
             assert "500" in operation["responses"]
+            # Every success response is backed by a response_model (a schema), never a raw dict
+            success = next(code for code in operation["responses"] if code.startswith("2"))
+            assert "schema" in operation["responses"][success]["content"]["application/json"]
+            assert operation["responses"][success]["content"]["application/json"]["schema"]
 
 
 # --- Persistence across a real server restart ---
