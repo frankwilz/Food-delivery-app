@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/frankwilz/Food-delivery-app/actions/workflows/tests.yml/badge.svg)](https://github.com/frankwilz/Food-delivery-app/actions/workflows/tests.yml)
 
-Food Delivery App is a team project that currently provides the Milestone 0 backend foundation. The repository contains a FastAPI application, a layered restaurant-list operation, JSON persistence, Pydantic response models, and a team agreement. The backend exposes health, restaurant, and interactive API-documentation endpoints.
+Food Delivery App is a team project. Milestone 1 delivers the first vertical slice: a customer can list, search and filter restaurants, open a restaurant's details and browse its menu, and a restaurant manager can create and update restaurants and menu items. It consists of a FastAPI backend (route → service → repository → JSON), Pydantic request and response models, automated tests that run in GitHub Actions, and a basic web frontend that calls the API.
 
 **Team name:** Abdul & Friends
 
@@ -53,6 +53,44 @@ python -m uvicorn app.main:app --reload
 ```
 
 The API is available at `http://127.0.0.1:8000` by default. Stop the server with `Ctrl+C`.
+
+## Run the Frontend
+
+The frontend is a single page, `frontend/index.html`, that calls the REST API with `fetch`. It has no build step and no extra dependencies.
+
+1. Start the backend as shown above, on port `8000`.
+2. In a **second terminal**, serve the frontend from the repository root on port `5500`:
+
+   ```bash
+   python -m http.server 5500 --directory frontend
+   ```
+
+3. Open **http://127.0.0.1:5500** in a browser.
+
+The page must be served on port `5500`, either from `localhost` or `127.0.0.1`. The backend only accepts cross-origin requests from those two origins (`CORSMiddleware` in `app/main.py`). Opening `index.html` directly from the file system, or serving it on another port, fails with "Could not load restaurants". VS Code's Live Server extension also uses port 5500 by default. If the API runs somewhere else, change the **API address** field at the bottom of the page.
+
+### Showcase the vertical slice
+
+To demo without changing the committed data, run the backend on a temporary copy of `data/`:
+
+```bash
+cp -r data /tmp/demo-data
+DATA_DIR=/tmp/demo-data python -m uvicorn app.main:app --reload
+```
+
+Then walk through **Restaurant List → Search / Filter → Restaurant Details → Menu → Menu Items** in the browser:
+
+| Step | In the frontend | API call |
+| --- | --- | --- |
+| Restaurant list | The home page shows every restaurant as a card | `GET /restaurants` |
+| Search / filter | Type in the search box (name, cuisine or address), or click a cuisine chip | Filters the loaded list in the browser |
+| Restaurant details | Click a card | `GET /restaurants/{id}` |
+| Menu and menu items | The details page lists the menu, grouped by category, with prices | `GET /restaurants/{id}/menu` |
+| Create a restaurant | Click **Add restaurant**, fill in the form and click **Create restaurant** | `POST /restaurants` |
+| Unknown restaurant | Go to `http://127.0.0.1:5500/#/restaurant/999` | `GET /restaurants/999` → 404, shown as "That restaurant doesn't exist" |
+| Validation error | Create a restaurant with the same name and address as an existing one | `POST /restaurants` → 409, shown in the form |
+
+After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with the same `DATA_DIR`. The new restaurant is still there, because it was saved to `restaurants.json`. The API side of search and filter (`?search=`, `?cuisine=`, `?is_open=`, `?min_rating=`) can be shown in `/docs`.
 
 ## API Endpoints
 
@@ -220,7 +258,7 @@ python -m pytest -q
 
 ```text
 Food-delivery-app/
-├── .github/workflows/tests.yml     # CI: runs pytest on every PR
+├── .github/workflows/tests.yml     # CI: runs pytest on every push and PR
 ├── app/
 │   ├── api/routes/
 │   │   ├── menu.py
@@ -231,16 +269,22 @@ Food-delivery-app/
 │   │   └── restaurant_repository.py
 │   ├── schemas/
 │   │   ├── error.py
+│   │   ├── health.py
 │   │   ├── menu_item.py
 │   │   └── restaurant.py
 │   ├── services/
 │   │   ├── menu_service.py
 │   │   └── restaurant_service.py
-│   └── main.py                     # app, /health, storage-error handler
+│   └── main.py                     # app, /health, storage-error handler, CORS
 ├── data/
 │   ├── menu_items.json
 │   └── restaurants.json
+├── docs/
+│   └── PROVENANCE.md
+├── frontend/
+│   └── index.html                  # restaurant list, details, menu, create form
 ├── scrum/
+│   ├── sprint-planning-m1.md
 │   └── team-agreement.md
 ├── tests/
 │   ├── conftest.py                 # isolated temporary data for every test
@@ -252,12 +296,13 @@ Food-delivery-app/
 └── requirements.txt
 ```
 
-## Milestone 0 Submission Check
+## Milestone 1 Submission Check
 
-1. Implement and pass the required pytest cases.
-2. Confirm that the application starts with the documented command.
-3. Confirm that `/health`, `/restaurants`, and `/docs` work in a clean environment.
-4. Review and approve the current version of `scrum/team-agreement.md`.
-5. Commit all final files and push them to GitHub.
-6. Create and push the required `foundation-gate` tag.
-7. Record the tag URL and its full commit SHA in the submission PDF.
+1. `python -m pytest -q` passes locally, and the GitHub Actions check is green on `main`.
+2. The backend and frontend start with the documented commands, and the vertical slice works in the browser.
+3. `/docs` lists every endpoint with a description, parameters, request and response models, and error responses.
+4. `docs/PROVENANCE.md` and the scrum notes in `scrum/` are complete.
+5. Every feature has a GitHub Issue with acceptance criteria and labels, and is on the Project board.
+6. All work is merged into `main` through reviewed pull requests.
+7. Create and push the `m1-vertical-slice` tag on the final commit.
+8. Record the repository, Project board and tag URLs, the full commit SHA and the agreed contribution percentages in the submission PDF.
