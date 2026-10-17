@@ -63,7 +63,7 @@ _Members: add any other tutorials, Stack Overflow answers, course materials or c
 | Member | Tool | What it was used for | How the output was checked |
 | --- | --- | --- | --- |
 | Frank Williams | Claude Code (Anthropic) | Drafting PR #12: the data-storage error handler, the `/health` response model | Ran the full test suite locally (116 passed)|
-| AbdulHaady Oludare | _To be completed_ | | |
+| AbdulHaady Oludare | Claude Code (Anthropic) | Used it to create menu tests and reviewed PR's  | Reviewed by 2 other teammates Frank and Zay|
 | Zay Lin Myat | Claude (Anthropic) | Used to draft and review Pull Request #11,Add restaurant get, create, update and search/filter | Run Test locally on local computer|
 | Olutayo Akere | _To be completed_ | | |
 ## Verification
