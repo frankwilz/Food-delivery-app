@@ -1,3 +1,4 @@
+from fastapi.middleware.cors import CORSMiddleware
 import json
 import logging
 
@@ -28,6 +29,12 @@ def data_storage_error(request: Request, exc: Exception) -> JSONResponse:
         content={"detail": "Data storage error"},
     )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5500", "http://127.0.0.1:5500"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get(
     "/health",
