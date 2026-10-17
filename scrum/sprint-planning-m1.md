@@ -3,9 +3,9 @@
 ## Sprint Information
 
 - **Sprint / Milestone:** Milestone 1 — First Vertical Slice (tag `m1-vertical-slice`)
-- **Sprint dates:** _YYYY-MM-DD_ to 2026-10-16
-- **Planning meeting date:** _YYYY-MM-DD_
-- **Facilitator:** _Name_
+- **Sprint dates:** _2026-10-8_ to 2026-10-16
+- **Planning meeting date:** _2026-10-9_
+- **Facilitator:** Frank<ZOOM CALL>
 
 ### Team Members
 
@@ -96,9 +96,9 @@ Break larger user stories into smaller tasks that can be implemented, reviewed, 
 
 - [x] `docs/PROVENANCE.md` (PR #13); README provenance section removed (PR #15)
 - [x] Sprint planning notes under `scrum/`
-- [ ] Each member completes their provenance rows (Zay: PR #16)
-- [ ] GitHub Issues and Project board created and linked
-- [ ] Tag `m1-vertical-slice`; Canvas PDF with repo, board, tag URL, SHA and agreed contribution %
+- [x] Each member completes their provenance rows (Zay: PR #16)
+- [x] GitHub Issues and Project board created and linked
+- [x] Tag `m1-vertical-slice`; Canvas PDF with repo, board, tag URL, SHA and agreed contribution %
 
 ---
 
@@ -137,17 +137,17 @@ Identify anything that could prevent the team from achieving the sprint goal.
 
 For work to be considered **DONE**, the team agrees that it must satisfy the following:
 
-- [ ] Requirements/acceptance criteria are satisfied.
-- [ ] Business logic is implemented in the appropriate service layer.
-- [ ] Persistence is handled through the repository layer.
-- [ ] Appropriate unit tests are included.
-- [ ] Appropriate integration/API tests are included.
-- [ ] Tests pass.
-- [ ] Code has been reviewed by at least one teammate.
-- [ ] Review feedback has been addressed.
-- [ ] Documentation has been updated where necessary.
-- [ ] The change is integrated into the team's working version.
-- [ ] No known critical defects remain.
+- [x] Requirements/acceptance criteria are satisfied.
+- [x] Business logic is implemented in the appropriate service layer.
+- [x] Persistence is handled through the repository layer.
+- [x] Appropriate unit tests are included.
+- [x] Appropriate integration/API tests are included.
+- [x] Tests pass.
+- [x] Code has been reviewed by at least one teammate.
+- [x] Review feedback has been addressed.
+- [x] Documentation has been updated where necessary.
+- [x] The change is integrated into the team's working version.
+- [x] No known critical defects remain.
 
 ---
 
