@@ -261,12 +261,3 @@ Food-delivery-app/
 5. Commit all final files and push them to GitHub.
 6. Create and push the required `foundation-gate` tag.
 7. Record the tag URL and its full commit SHA in the submission PDF.
-
-## Provenance
-
-Record where each contribution came from, including any AI assistance, before submission.
-
-| Area | Author(s) | Assistance and sources |
-| --- | --- | --- |
-| Testing, CI and integration: `.github/workflows/tests.yml`, `tests/test_integration.py`, the storage-error handler in `app/main.py`, and README updates | Frank Williams | Drafted with Claude Code (AI coding assistant), then reviewed and run locally by Frank Williams |
-| _Other areas_ | _Team member_ | _To be completed by each member_ |
