@@ -30,14 +30,16 @@ Deliver the first complete vertical slice of the backend: a customer can list, s
 
 Select the user stories that the team commits to working on during this sprint.
 
+Each user story is a GitHub Issue with acceptance criteria and labels, tracked on the [Project board](https://github.com/users/frankwilz/projects/2) (To Do / In Progress / Review / Done).
+
 | User Story | Description | Priority | Primary Owner | Dependencies |
 |---|---|---|---|---|
-| #_ US1 Restaurant management | As a restaurant manager, I can view, create and update restaurants, so the list stays accurate | High | Zay Lin Myat | JSON storage design decision |
-| #_ US2 Restaurant search | As a customer, I can search and filter restaurants by name, cuisine, open status and rating, so I can find somewhere to order from | High | Zay Lin Myat | US1 |
-| #_ US3 Menu browsing and management | As a customer, I can view a restaurant's menu and individual items; as a manager, I can add and update menu items | High | AbdulHaady Oludare | US1, storage design decision |
-| #_ US4 Frontend | As a customer, I can use a web page to see restaurants, select one, see its details and menu, and create or update a restaurant | High | Olutayo Akere | US1, US2, US3 endpoints |
-| #_ US5 CI, integration and persistence | As a team, every push and PR is tested automatically, the full flow is tested end to end, and data survives a restart | High | Frank Williams | US1, US3 |
-| #_ US6 Documentation and submission | README, `docs/PROVENANCE.md`, scrum notes and the `m1-vertical-slice` tag are complete | Medium | Frank Williams | All stories |
+| #19 US1 Restaurant management | As a restaurant manager, I can view, create and update restaurants, so the list stays accurate | High | Zay Lin Myat | JSON storage design decision |
+| #20 US2 Restaurant search | As a customer, I can search and filter restaurants by name, cuisine, open status and rating, so I can find somewhere to order from | High | Zay Lin Myat | US1 |
+| #21 US3 Menu browsing and management | As a customer, I can view a restaurant's menu and individual items; as a manager, I can add and update menu items | High | AbdulHaady Oludare | US1, storage design decision |
+| #22 US4 Frontend | As a customer, I can use a web page to see restaurants, select one, see its details and menu, and create or update a restaurant | High | Olutayo Akere | US1, US2, US3 endpoints |
+| #23 US5 CI, integration and persistence | As a team, every push and PR is tested automatically, the full flow is tested end to end, and data survives a restart | High | Frank Williams | US1, US3 |
+| #24 US6 Documentation and submission | README, `docs/PROVENANCE.md`, scrum notes and the `m1-vertical-slice` tag are complete | Medium | Frank Williams | All stories |
 
 > **Important:** Primary ownership means that the student is responsible for coordinating the work. It does not mean that the student works alone or that other team members cannot contribute.
 
@@ -47,7 +49,7 @@ Select the user stories that the team commits to working on during this sprint.
 
 Break larger user stories into smaller tasks that can be implemented, reviewed, and tested.
 
-### User Story #_ — US1 Restaurant management
+### User Story #19 — US1 Restaurant management
 
 - [x] `GET /restaurants/{id}` with 404 for unknown ids (PR #11)
 - [x] `POST /restaurants` with server-assigned id (`max + 1`) and 409 for duplicate name + address (PR #11)
@@ -57,7 +59,7 @@ Break larger user stories into smaller tasks that can be implemented, reviewed, 
 - [x] Tests (PR #11)
 - [x] Documentation / API updates: route descriptions, README endpoint table (PR #11)
 
-### User Story #_ — US2 Restaurant search
+### User Story #20 — US2 Restaurant search
 
 - [x] `search`, `cuisine`, `is_open`, `min_rating` query parameters on `GET /restaurants`, combinable (PR #11)
 - [x] Filtering logic in `RestaurantService`, not in the route (PR #11)
@@ -65,7 +67,7 @@ Break larger user stories into smaller tasks that can be implemented, reviewed, 
 - [x] Tests, including 422 for invalid filter values (PR #11)
 - [x] Documentation / API updates (PR #11)
 
-### User Story #_ — US3 Menu browsing and management
+### User Story #21 — US3 Menu browsing and management
 
 - [x] `MenuItem`, `MenuItemCreate`, `MenuItemUpdate` models (PR #7/#10)
 - [x] `data/menu_items.json` linked to restaurants by `restaurant_id` (PR #7/#10)
@@ -74,7 +76,7 @@ Break larger user stories into smaller tasks that can be implemented, reviewed, 
 - [x] Tests (PR #7/#9/#10)
 - [x] Documentation / API updates, including the menu-storage design decision (PR #9)
 
-### User Story #_ — US4 Frontend
+### User Story #22 — US4 Frontend
 
 - [x] Restaurant list page that fetches `GET /restaurants`, with search box and cuisine chips (PR #14)
 - [x] Select a restaurant to show its details (`GET /restaurants/{id}`) and menu grouped by category (`GET /restaurants/{id}/menu`) (PR #14)
@@ -83,7 +85,7 @@ Break larger user stories into smaller tasks that can be implemented, reviewed, 
 - [x] Test the main user workflow: list → search → details → menu → create, unknown restaurant (404) and duplicate (409), checked in Chrome against the running API
 - [x] README: how to run the frontend and showcase the vertical slice
 
-### User Story #_ — US5 CI, integration and persistence
+### User Story #23 — US5 CI, integration and persistence
 
 - [x] GitHub Actions workflow running pytest on every push and PR, Python 3.11 and 3.13 (PR #12)
 - [x] Vertical-slice integration test through every layer (PR #12)
@@ -92,7 +94,7 @@ Break larger user stories into smaller tasks that can be implemented, reviewed, 
 - [x] Tests (PR #12)
 - [x] Documentation / API updates: README tests and error-handling sections (PR #12)
 
-### User Story #_ — US6 Documentation and submission
+### User Story #24 — US6 Documentation and submission
 
 - [x] `docs/PROVENANCE.md` (PR #13); README provenance section removed (PR #15)
 - [x] Sprint planning notes under `scrum/`

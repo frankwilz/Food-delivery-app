@@ -6,6 +6,8 @@ Food Delivery App is a team project. Milestone 1 delivers the first vertical sli
 
 **Team name:** Abdul & Friends
 
+**Project board:** https://github.com/users/frankwilz/projects/2 (user stories #19–#24)
+
 ## Requirements
 
 - Python 3.11 or newer
