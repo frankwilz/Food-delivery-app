@@ -64,7 +64,7 @@ _Members: add any other tutorials, Stack Overflow answers, course materials or c
 | --- | --- | --- | --- |
 | Frank Williams | Claude Code (Anthropic) | Drafting PR #12: the data-storage error handler, the `/health` response model | Ran the full test suite locally (116 passed)|
 | AbdulHaady Oludare | _To be completed_ | | |
-| Zay Lin Myat | _To be completed_ | | |
+| Zay Lin Myat | Claude (Anthropic) | Used to draft and review Pull Request #11,Add restaurant get, create, update and search/filter | Run Test locally on local computer|
 | Olutayo Akere | _To be completed_ | | |
 ## Verification
 
