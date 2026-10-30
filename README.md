@@ -58,7 +58,7 @@ The API is available at `http://127.0.0.1:8000` by default. Stop the server with
 
 ## Run the Frontend
 
-The frontend is a single page, `frontend/index.html`, that calls the REST API with `fetch`. It has no build step and no extra dependencies.
+The frontend is a single page that calls the REST API with `fetch`, split into `frontend/index.html` (markup), `frontend/styles.css` (styles) and `frontend/index.js` (behavior). It has no build step and no extra dependencies.
 
 1. Start the backend as shown above, on port `8000`.
 2. In a **second terminal**, serve the frontend from the repository root on port `5500`:
@@ -284,7 +284,9 @@ Food-delivery-app/
 ├── docs/
 │   └── PROVENANCE.md
 ├── frontend/
-│   └── index.html                  # restaurant list, details, menu, create form
+│   ├── index.html                  # page markup
+│   ├── index.js                    # restaurant list, details, menu, create form
+│   └── styles.css                  # page styles
 ├── scrum/
 │   ├── sprint-planning-m1.md
 │   └── team-agreement.md
