@@ -1,15 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
 from app.core.config import MENU_ITEMS_FILE, RESTAURANTS_FILE
 from app.repositories.menu_item_repository import MenuItemRepository
 from app.repositories.restaurant_repository import RestaurantRepository
-from app.schemas.menu_item import ErrorResponse, MenuItem, MenuItemCreate, MenuItemUpdate
-from app.services.menu_service import (
-    DuplicateMenuItemError,
-    EmptyUpdateError,
-    MenuService,
-    NotFoundError,
-)
+from app.schemas.error import ErrorResponse
+from app.schemas.menu_item import MenuItem, MenuItemCreate, MenuItemUpdate
+from app.services.menu_service import MenuService
 
 router = APIRouter()
 
@@ -36,10 +32,7 @@ def get_menu_service() -> MenuService:
     responses=RESTAURANT_NOT_FOUND,
 )
 def list_menu_items(restaurant_id: int, service: MenuService = Depends(get_menu_service)):
-    try:
-        return service.list_menu_items(restaurant_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return service.list_menu_items(restaurant_id)
 
 
 @router.get(
@@ -50,10 +43,7 @@ def list_menu_items(restaurant_id: int, service: MenuService = Depends(get_menu_
     responses=ITEM_NOT_FOUND,
 )
 def get_menu_item(restaurant_id: int, item_id: int, service: MenuService = Depends(get_menu_service)):
-    try:
-        return service.get_menu_item(restaurant_id, item_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return service.get_menu_item(restaurant_id, item_id)
 
 
 @router.post(
@@ -73,12 +63,7 @@ def create_menu_item(
     item: MenuItemCreate,
     service: MenuService = Depends(get_menu_service),
 ):
-    try:
-        return service.create_menu_item(restaurant_id, item)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except DuplicateMenuItemError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return service.create_menu_item(restaurant_id, item)
 
 
 @router.patch(
@@ -98,11 +83,4 @@ def update_menu_item(
     changes: MenuItemUpdate,
     service: MenuService = Depends(get_menu_service),
 ):
-    try:
-        return service.update_menu_item(restaurant_id, item_id, changes)
-    except EmptyUpdateError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except DuplicateMenuItemError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return service.update_menu_item(restaurant_id, item_id, changes)

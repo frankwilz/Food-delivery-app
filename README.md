@@ -185,7 +185,7 @@ GET/POST/PATCH /restaurants/{restaurant_id}/menu[/{item_id}]
   -> data/menu_items.json
 ```
 
-- **Schemas** (`app/schemas/menu_item.py`): `MenuItem` (response), `MenuItemCreate` (POST body, no `id`/`restaurant_id`), `MenuItemUpdate` (PATCH body, every field optional), `ErrorResponse` (error body).
+- **Schemas** (`app/schemas/menu_item.py`): `MenuItem` (response), `MenuItemCreate` (POST body, no `id`/`restaurant_id`), `MenuItemUpdate` (PATCH body, every field optional). Errors use the shared `ErrorResponse` in `app/schemas/error.py`.
 - **Fields:** `id`, `restaurant_id`, `name`, `description`, `price` (> 0), `category`, `is_available`.
 - **Service rules:** the restaurant must exist; an item is only reachable through the restaurant that owns it; item names are unique within a restaurant (case-insensitive, 409); a PATCH with no fields is rejected (400).
 - **Repository:** the only code that reads or writes `data/menu_items.json`. New ids are `max(existing ids) + 1`, and `id`/`restaurant_id` are never overwritten. Each save writes a temporary file and swaps it in with `os.replace`, so a crash cannot leave a half-written file.
@@ -265,8 +265,11 @@ Food-delivery-app/
 │   ├── api/routes/
 │   │   ├── menu.py
 │   │   └── restaurants.py
-│   ├── core/config.py              # DATA_DIR and data file paths
+│   ├── core/
+│   │   ├── config.py               # DATA_DIR and data file paths
+│   │   └── errors.py               # shared domain errors (404, 409, ...)
 │   ├── repositories/
+│   │   ├── json_repository.py      # JsonRepository base: load, atomic save, next_id
 │   │   ├── menu_item_repository.py
 │   │   └── restaurant_repository.py
 │   ├── schemas/
@@ -277,7 +280,7 @@ Food-delivery-app/
 │   ├── services/
 │   │   ├── menu_service.py
 │   │   └── restaurant_service.py
-│   └── main.py                     # app, /health, storage-error handler, CORS
+│   └── main.py                     # app, /health, error handlers, CORS
 ├── data/
 │   ├── menu_items.json
 │   └── restaurants.json

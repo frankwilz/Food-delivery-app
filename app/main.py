@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from app.api.routes import menu, restaurants
+from app.core.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from app.schemas.error import ErrorResponse
 from app.schemas.health import HealthResponse
 
@@ -28,6 +29,26 @@ def data_storage_error(request: Request, exc: Exception) -> JSONResponse:
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "Data storage error"},
     )
+
+
+# Services raise domain errors; this table is the one place they become HTTP status codes,
+# so routes need no try/except. Subclasses (e.g. RestaurantNotFoundError) use their base's code.
+DOMAIN_ERROR_STATUS = {
+    BadRequestError: status.HTTP_400_BAD_REQUEST,
+    ForbiddenError: status.HTTP_403_FORBIDDEN,
+    NotFoundError: status.HTTP_404_NOT_FOUND,
+    ConflictError: status.HTTP_409_CONFLICT,
+}
+
+
+def domain_error(request: Request, exc: Exception) -> JSONResponse:
+    status_code = next(code for error, code in DOMAIN_ERROR_STATUS.items() if isinstance(exc, error))
+    return JSONResponse(status_code=status_code, content={"detail": str(exc)})
+
+
+for error_class in DOMAIN_ERROR_STATUS:
+    app.add_exception_handler(error_class, domain_error)
+
 
 app.add_middleware(
     CORSMiddleware,
