@@ -1,15 +1,20 @@
+from app.core.errors import (
+    ConflictError,
+    EmptyUpdateError,
+    NotFoundError,
+    RestaurantNotFoundError,
+)
 from app.repositories.menu_item_repository import MenuItemRepository
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.menu_item import MenuItemCreate, MenuItemUpdate
 
-
-class NotFoundError(Exception):
-    pass
-
-
-class RestaurantNotFoundError(NotFoundError):
-    def __init__(self, restaurant_id: int):
-        super().__init__(f"Restaurant {restaurant_id} not found")
+__all__ = [
+    "DuplicateMenuItemError",
+    "EmptyUpdateError",
+    "MenuItemNotFoundError",
+    "MenuService",
+    "RestaurantNotFoundError",
+]
 
 
 class MenuItemNotFoundError(NotFoundError):
@@ -17,14 +22,9 @@ class MenuItemNotFoundError(NotFoundError):
         super().__init__(f"Menu item {item_id} not found for restaurant {restaurant_id}")
 
 
-class DuplicateMenuItemError(Exception):
+class DuplicateMenuItemError(ConflictError):
     def __init__(self, restaurant_id: int, name: str):
         super().__init__(f"Restaurant {restaurant_id} already has a menu item named '{name}'")
-
-
-class EmptyUpdateError(Exception):
-    def __init__(self):
-        super().__init__("Update request must include at least one field")
 
 
 class MenuService:

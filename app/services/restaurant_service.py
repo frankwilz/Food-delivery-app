@@ -1,20 +1,13 @@
+from app.core.errors import ConflictError, EmptyUpdateError, RestaurantNotFoundError
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.restaurant import RestaurantCreate, RestaurantUpdate
 
-
-class RestaurantNotFoundError(Exception):
-    def __init__(self, restaurant_id: int):
-        super().__init__(f"Restaurant {restaurant_id} not found")
+__all__ = ["DuplicateRestaurantError", "EmptyUpdateError", "RestaurantNotFoundError", "RestaurantService"]
 
 
-class DuplicateRestaurantError(Exception):
+class DuplicateRestaurantError(ConflictError):
     def __init__(self, name: str, address: str):
         super().__init__(f"A restaurant named '{name}' already exists at '{address}'")
-
-
-class EmptyUpdateError(Exception):
-    def __init__(self):
-        super().__init__("Update request must include at least one field")
 
 
 class RestaurantService:

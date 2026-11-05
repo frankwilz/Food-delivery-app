@@ -46,6 +46,19 @@ The information below comes from the repository's pull requests and git history 
 
 Proposed in PR #7 and documented in PR #9 (see also `README.md`, "Design decision: menu storage").
 
+## Decision Receipt (5.9): shared JSON repository and centralized error handling
+
+**Decision:** shared persistence code and shared error handling each live in one place.
+
+- **What changed:**
+  - `app/repositories/json_repository.py` adds a `JsonRepository` base class with `load`, an atomic `save` (temporary file + `os.replace`) and `next_id` (`max(existing ids) + 1`). `RestaurantRepository` and `MenuItemRepository` inherit from it and keep only their own lookups and updates.
+  - `app/core/errors.py` holds the shared domain errors: `BadRequestError`, `ForbiddenError`, `NotFoundError`, `ConflictError`, plus `RestaurantNotFoundError` and `EmptyUpdateError`, which both services used to define separately. Errors that belong to one feature (`DuplicateRestaurantError`, `MenuItemNotFoundError`, `DuplicateMenuItemError`) stay in their service and subclass a shared base.
+  - `app/main.py` maps each base error to a status code (400, 403, 404, 409) in one table and registers one handler for it. Routes no longer catch exceptions; they just call the service.
+  - The duplicate `ErrorResponse` re-export was removed from `app/schemas/menu_item.py`. Every module now imports it from `app/schemas/error.py`.
+- **Why:** both repositories had the same load, save and id code, and every route repeated the same `try/except` blocks. That made it easy for one copy to drift from the others, for example a new route that forgot to turn an error into a 404. With one base class and one error table, a new feature such as orders gets atomic saves and correct status codes for free.
+- **Trade-off:** the route that raises an error no longer shows its status code. To find it, you look up the error's base class in `DOMAIN_ERROR_STATUS` in `main.py`. The `responses=` lists on each route still document the possible errors in `/docs`.
+- **Behaviour:** unchanged. Status codes, `{"detail": "..."}` bodies and error messages are the same, all 116 tests pass without changes, and the generated OpenAPI schema is identical before and after. `ForbiddenError` (403) has no users yet; it exists so that future permission checks follow the same pattern.
+
 ## External sources
 
 | Source | Used for |

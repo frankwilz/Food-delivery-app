@@ -1,15 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.core.config import RESTAURANTS_FILE
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.error import ErrorResponse
 from app.schemas.restaurant import Restaurant, RestaurantCreate, RestaurantUpdate
-from app.services.restaurant_service import (
-    DuplicateRestaurantError,
-    EmptyUpdateError,
-    RestaurantNotFoundError,
-    RestaurantService,
-)
+from app.services.restaurant_service import RestaurantService
 
 router = APIRouter()
 
@@ -51,10 +46,7 @@ def list_restaurants(
     responses=NOT_FOUND,
 )
 def get_restaurant(restaurant_id: int, service: RestaurantService = Depends(get_restaurant_service)):
-    try:
-        return service.get_restaurant(restaurant_id)
-    except RestaurantNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return service.get_restaurant(restaurant_id)
 
 
 @router.post(
@@ -70,10 +62,7 @@ def get_restaurant(restaurant_id: int, service: RestaurantService = Depends(get_
     responses=DUPLICATE,
 )
 def create_restaurant(restaurant: RestaurantCreate, service: RestaurantService = Depends(get_restaurant_service)):
-    try:
-        return service.create_restaurant(restaurant)
-    except DuplicateRestaurantError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return service.create_restaurant(restaurant)
 
 
 @router.patch(
@@ -91,11 +80,4 @@ def update_restaurant(
     changes: RestaurantUpdate,
     service: RestaurantService = Depends(get_restaurant_service),
 ):
-    try:
-        return service.update_restaurant(restaurant_id, changes)
-    except EmptyUpdateError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except RestaurantNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except DuplicateRestaurantError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return service.update_restaurant(restaurant_id, changes)
