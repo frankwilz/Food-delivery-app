@@ -1,0 +1,38 @@
+[
+    {
+        "id": 1,
+        "name": "Ana Souza",
+        "email": "ana.souza@example.com",
+        "password_hash": "pbkdf2_sha256$600000$017d1cecc944021e8b188e51fc56c4a5$6da3dbe9bafd938ee30b5b4d743040f0698bbd00d50774c7db77682514bb8ee5",
+        "delivery_address": "1155 Bernard Avenue, Kelowna",
+        "role": "customer",
+        "is_active": true
+    },
+    {
+        "id": 2,
+        "name": "Ben Carter",
+        "email": "ben.carter@example.com",
+        "password_hash": "pbkdf2_sha256$600000$d016841ad565401b26ce4b443e3f217b$892b49efd321f31c491ea225d1408cb8189b93b734532e2b75d8243f1c6533ee",
+        "delivery_address": "3333 University Way, Kelowna",
+        "role": "customer",
+        "is_active": true
+    },
+    {
+        "id": 3,
+        "name": "Chloe Martin",
+        "email": "chloe.martin@example.com",
+        "password_hash": "pbkdf2_sha256$600000$1151d0d785d6e3093a415507b4066d4e$6053844adc95a5b29dec8ef9a39d77e4c609819bdde3d2c520194626c2e4ff8a",
+        "delivery_address": "780 Glenmore Road, Kelowna",
+        "role": "customer",
+        "is_active": false
+    },
+    {
+        "id": 4,
+        "name": "Dev Patel",
+        "email": "dev.patel@example.com",
+        "password_hash": "pbkdf2_sha256$600000$49627e1ed530568c23f41ca5fcb4a494$2bef153de052f1dcf95268fa591f52342018186772ed9c31d374cc582a987353",
+        "delivery_address": "1450 Water Street, Kelowna",
+        "role": "manager",
+        "is_active": true
+    }
+]
