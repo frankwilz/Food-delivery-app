@@ -107,6 +107,7 @@ After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with
 | `GET` | `/restaurants/{restaurant_id}/menu/{item_id}` | Returns one menu item (404 if missing or owned by another restaurant). |
 | `POST` | `/restaurants/{restaurant_id}/menu` | Adds a menu item; the server assigns the id (201; 404; 409 duplicate name; 422 invalid body). |
 | `PATCH` | `/restaurants/{restaurant_id}/menu/{item_id}` | Partially updates a menu item (200; 400 empty body; 404; 409 duplicate name; 422). |
+| `POST` | `/customers` | Registers a customer account; the server assigns the id, sets `role` to `customer` and stores only a salted password hash (201; 409 duplicate email, case-insensitive; 422 invalid body). |
 | `GET` | `/docs` | Opens FastAPI's interactive Swagger UI. |
 | `GET` | `/openapi.json` | Returns the generated OpenAPI schema. |
 
@@ -225,7 +226,7 @@ The default data directory is `data/` at the repository root. Set the `DATA_DIR`
 DATA_DIR=/absolute/path/to/test-data python -m uvicorn app.main:app --reload
 ```
 
-The configured directory must contain `restaurants.json` and `menu_items.json`. This setting allows automated tests to use isolated temporary data instead of modifying the committed representative data.
+The configured directory must contain `restaurants.json`, `menu_items.json` and `customers.json`. This setting allows automated tests to use isolated temporary data instead of modifying the committed representative data.
 
 ## Representative Data
 
@@ -236,6 +237,15 @@ data/restaurants.json
 ```
 
 The committed file contains four restaurant records with stable integer identifiers (two Pizza, one Mexican, one Japanese; one closed), so search and filters can be demonstrated.
+
+`data/customers.json` contains four accounts: two active customers, one deactivated customer and one manager. Passwords are stored only as salted PBKDF2-SHA256 hashes (`app/core/security.py`). The demo passwords are:
+
+| Email | Password | Role | Active |
+| --- | --- | --- | --- |
+| `ana.souza@example.com` | `Ana-demo-2026` | customer | yes |
+| `ben.carter@example.com` | `Ben-demo-2026` | customer | yes |
+| `chloe.martin@example.com` | `Chloe-demo-2026` | customer | no |
+| `dev.patel@example.com` | `Dev-demo-2026` | manager | yes |
 
 ## Tests
 
@@ -250,9 +260,10 @@ python -m pytest -q
 | `tests/test_health.py` | `GET /health`. |
 | `tests/test_restaurants.py` | Restaurant endpoints, search and filters, validation, the repository and service, and committed data integrity. |
 | `tests/test_menu.py` | Menu endpoints, validation, duplicate names, the repository, and committed data integrity. |
+| `tests/test_customers.py` | Customer registration, duplicate emails (case-insensitive), validation, password hashing, the repository and service, and committed data integrity. |
 | `tests/test_integration.py` | The complete vertical slice (restaurant + menu through every layer to the JSON files), error handling (`404`/`405`/`422`/JSON `500`), API documentation, and **persistence across a real restart**: the test starts `uvicorn` with `DATA_DIR` set to a temporary folder, writes data, stops the server, starts it again and reads the data back. |
 
-**Isolated test data:** `tests/conftest.py` copies `data/restaurants.json` and `data/menu_items.json` into a fresh temporary folder before **every** test and points the routes at those copies. Tests can create and update freely without changing the committed data or affecting each other. Several tests check that the files in `data/` are unchanged afterwards.
+**Isolated test data:** `tests/conftest.py` copies `data/restaurants.json`, `data/menu_items.json` and `data/customers.json` into a fresh temporary folder before **every** test and points the routes at those copies. Tests can create and update freely without changing the committed data or affecting each other. Several tests check that the files in `data/` are unchanged afterwards.
 
 **Continuous integration:** `.github/workflows/tests.yml` runs `pytest` with GitHub Actions on Python 3.11 and 3.13 for every pull request and every push to `main`. It then checks that `data/` was not modified. A pull request should only be merged when this check is green.
 
@@ -263,25 +274,31 @@ Food-delivery-app/
 ├── .github/workflows/tests.yml     # CI: runs pytest on every push and PR
 ├── app/
 │   ├── api/routes/
+│   │   ├── customers.py
 │   │   ├── menu.py
 │   │   └── restaurants.py
 │   ├── core/
 │   │   ├── config.py               # DATA_DIR and data file paths
-│   │   └── errors.py               # shared domain errors (404, 409, ...)
+│   │   ├── errors.py               # shared domain errors (404, 409, ...)
+│   │   └── security.py             # salted password hashing
 │   ├── repositories/
+│   │   ├── customer_repository.py
 │   │   ├── json_repository.py      # JsonRepository base: load, atomic save, next_id
 │   │   ├── menu_item_repository.py
 │   │   └── restaurant_repository.py
 │   ├── schemas/
+│   │   ├── customer.py
 │   │   ├── error.py
 │   │   ├── health.py
 │   │   ├── menu_item.py
 │   │   └── restaurant.py
 │   ├── services/
+│   │   ├── customer_service.py
 │   │   ├── menu_service.py
 │   │   └── restaurant_service.py
 │   └── main.py                     # app, /health, error handlers, CORS
 ├── data/
+│   ├── customers.json
 │   ├── menu_items.json
 │   └── restaurants.json
 ├── docs/
@@ -295,6 +312,7 @@ Food-delivery-app/
 │   └── team-agreement.md
 ├── tests/
 │   ├── conftest.py                 # isolated temporary data for every test
+│   ├── test_customers.py
 │   ├── test_health.py
 │   ├── test_integration.py
 │   ├── test_menu.py
