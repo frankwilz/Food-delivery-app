@@ -3,6 +3,7 @@ import shutil
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api import dependencies
 from app.api.routes import customers as customers_route
 from app.api.routes import menu as menu_route
 from app.api.routes import restaurants as restaurants_route
@@ -22,6 +23,8 @@ def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setattr(menu_route, "MENU_ITEMS_FILE", tmp_path / "menu_items.json")
     shutil.copy(REAL_DATA / "customers.json", tmp_path / "customers.json")
     monkeypatch.setattr(customers_route, "CUSTOMERS_FILE", tmp_path / "customers.json")
+    # Login and get_current_customer read the customers file through the shared dependencies
+    monkeypatch.setattr(dependencies, "CUSTOMERS_FILE", tmp_path / "customers.json")
 
 
 @pytest.fixture

@@ -4,6 +4,12 @@ from app.repositories.json_repository import JsonRepository
 class CustomerRepository(JsonRepository):
     """The only code allowed to read or write data/customers.json."""
 
+    def get_by_id(self, customer_id: int) -> dict | None:
+        for customer in self.get_all():
+            if customer["id"] == customer_id:
+                return customer
+        return None
+
     def get_by_email(self, email: str) -> dict | None:
         # Emails are matched ignoring case, so "Ana@Example.com" finds "ana@example.com"
         wanted = email.strip().casefold()

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, status
 
+from app.api.dependencies import get_current_customer
 from app.core.config import CUSTOMERS_FILE
 from app.repositories.customer_repository import CustomerRepository
 from app.schemas.customer import Customer, CustomerCreate
@@ -8,6 +9,7 @@ from app.services.customer_service import CustomerService
 
 router = APIRouter()
 
+NOT_SIGNED_IN = {401: {"model": ErrorResponse, "description": "The token is missing, invalid or expired"}}
 DUPLICATE_EMAIL = {409: {"model": ErrorResponse, "description": "An account with this email already exists"}}
 
 
@@ -29,3 +31,17 @@ def get_customer_service() -> CustomerService:
 )
 def register_customer(customer: CustomerCreate, service: CustomerService = Depends(get_customer_service)):
     return service.register(customer)
+
+
+@router.get(
+    "/customers/me",
+    response_model=Customer,
+    summary="Get the signed-in customer",
+    description=(
+        "Returns the account that the `Authorization: Bearer <token>` header belongs to. Get a token "
+        "from `POST /auth/login`. The password hash is never returned."
+    ),
+    responses=NOT_SIGNED_IN,
+)
+def get_signed_in_customer(customer: dict = Depends(get_current_customer)):
+    return customer

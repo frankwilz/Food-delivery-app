@@ -108,6 +108,8 @@ After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with
 | `POST` | `/restaurants/{restaurant_id}/menu` | Adds a menu item; the server assigns the id (201; 404; 409 duplicate name; 422 invalid body). |
 | `PATCH` | `/restaurants/{restaurant_id}/menu/{item_id}` | Partially updates a menu item (200; 400 empty body; 404; 409 duplicate name; 422). |
 | `POST` | `/customers` | Registers a customer account; the server assigns the id, sets `role` to `customer` and stores only a salted password hash (201; 409 duplicate email, case-insensitive; 422 invalid body). |
+| `GET` | `/customers/me` | Returns the signed-in customer (200; 401 missing, invalid or expired token). Requires `Authorization: Bearer <token>`. |
+| `POST` | `/auth/login` | Checks an email and password and returns a signed token (200; 401 wrong email or password; 422 invalid body). |
 | `GET` | `/docs` | Opens FastAPI's interactive Swagger UI. |
 | `GET` | `/openapi.json` | Returns the generated OpenAPI schema. |
 
@@ -206,6 +208,40 @@ Menu items are stored in their **own file** (`data/menu_items.json`) and linked 
 - **Why:** restaurant and menu code can be built and tested independently (separate repositories, no edits to the same file); updating one menu item does not rewrite every restaurant; item ids are unique across all restaurants, so an item can be addressed directly.
 - **Trade-off:** JSON does not enforce the link, so the service checks that the restaurant exists before every menu operation, and `test_committed_menu_data_is_valid_and_consistent` checks that every `restaurant_id` in the data points to a real restaurant.
 
+## Authentication
+
+A customer logs in with their email and password and receives a token:
+
+```bash
+curl -X POST http://127.0.0.1:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "ana.souza@example.com", "password": "Ana-demo-2026"}'
+```
+
+```json
+{"access_token": "<token>", "token_type": "bearer"}
+```
+
+The token is sent on later requests in the `Authorization: Bearer <token>` header. In `/docs`, click **Authorize**, paste the token and every protected endpoint is then called with it. For example, to read the signed-in customer:
+
+```bash
+curl http://127.0.0.1:8000/customers/me -H "Authorization: Bearer <token>"
+```
+
+```text
+POST /auth/login
+  -> FastAPI route in app/api/routes/auth.py
+  -> AuthService in app/services/auth_service.py
+  -> CustomerRepository in app/repositories/customer_repository.py
+  -> data/customers.json
+```
+
+- **Token:** a JWT signed with HS256 (`app/core/security.py`, using PyJWT). It holds only the customer id and an expiry time (60 minutes by default), never the email, role or password.
+- **Signing key:** read from the `SECRET_KEY` environment variable and never hard-coded (see [Configuration](#configuration)).
+- **Protecting an endpoint:** add `customer: dict = Depends(get_current_customer)` from `app/api/dependencies.py`. It reads the header, checks the token and loads the customer, or responds with `401`.
+- **Active customers:** `CustomerService.get_active_customer(customer_id)` returns the customer, or raises a clear error if the account is missing (404) or deactivated (403). The cart and checkout call it instead of checking `is_active` themselves.
+- **Wrong email or wrong password:** both return the same `401` and message, so the response does not reveal which emails have accounts.
+
 ## Error Handling
 
 Every error response is JSON with the shared `ErrorResponse` shape, `{"detail": "..."}`, and every error status is listed in `/docs`.
@@ -213,6 +249,7 @@ Every error response is JSON with the shared `ErrorResponse` shape, `{"detail": 
 | Status | When |
 | --- | --- |
 | `400` | A `PATCH` body contains no fields. |
+| `401` | The login email or password is wrong, or a protected endpoint was called with a missing, invalid or expired token. The response includes a `WWW-Authenticate: Bearer` header. |
 | `404` | The restaurant or menu item does not exist, or the menu item belongs to another restaurant. |
 | `409` | A create or update would duplicate a restaurant (name + address) or a menu item name at the same restaurant. |
 | `422` | Invalid input: a wrong type, a value out of range, a missing required field, an unknown or server-assigned field (`id`, `restaurant_id`), `null` in a `PATCH`, or malformed JSON. For `422` responses, `detail` is FastAPI's list of validation errors. |
@@ -227,6 +264,17 @@ DATA_DIR=/absolute/path/to/test-data python -m uvicorn app.main:app --reload
 ```
 
 The configured directory must contain `restaurants.json`, `menu_items.json` and `customers.json`. This setting allows automated tests to use isolated temporary data instead of modifying the committed representative data.
+
+Login tokens are configured with two more environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SECRET_KEY` | A random key generated at startup | Signs login tokens. Without it, every token stops working when the server restarts (including each `--reload`), so set it to keep users signed in. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | How long a login token stays valid. |
+
+```bash
+SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" python -m uvicorn app.main:app --reload
+```
 
 ## Representative Data
 
@@ -261,9 +309,10 @@ python -m pytest -q
 | `tests/test_restaurants.py` | Restaurant endpoints, search and filters, validation, the repository and service, and committed data integrity. |
 | `tests/test_menu.py` | Menu endpoints, validation, duplicate names, the repository, and committed data integrity. |
 | `tests/test_customers.py` | Customer registration, duplicate emails (case-insensitive), validation, password hashing, the repository and service, and committed data integrity. |
+| `tests/test_auth.py` | Login (valid, wrong password, unknown email, invalid body), tokens (expired, tampered, forged, malformed), `get_current_customer` (missing, invalid and expired tokens), and the `SECRET_KEY` setting. |
 | `tests/test_integration.py` | The complete vertical slice (restaurant + menu through every layer to the JSON files), error handling (`404`/`405`/`422`/JSON `500`), API documentation, and **persistence across a real restart**: the test starts `uvicorn` with `DATA_DIR` set to a temporary folder, writes data, stops the server, starts it again and reads the data back. |
 
-**Isolated test data:** `tests/conftest.py` copies `data/restaurants.json`, `data/menu_items.json` and `data/customers.json` into a fresh temporary folder before **every** test and points the routes at those copies. Tests can create and update freely without changing the committed data or affecting each other. Several tests check that the files in `data/` are unchanged afterwards.
+**Isolated test data:** `tests/conftest.py` copies `data/restaurants.json`, `data/menu_items.json` and `data/customers.json` into a fresh temporary folder before **every** test and points the routes and shared dependencies at those copies. Tests can create and update freely without changing the committed data or affecting each other. Several tests check that the files in `data/` are unchanged afterwards.
 
 **Continuous integration:** `.github/workflows/tests.yml` runs `pytest` with GitHub Actions on Python 3.11 and 3.13 for every pull request and every push to `main`. It then checks that `data/` was not modified. A pull request should only be merged when this check is green.
 
@@ -273,26 +322,31 @@ python -m pytest -q
 Food-delivery-app/
 ├── .github/workflows/tests.yml     # CI: runs pytest on every push and PR
 ├── app/
-│   ├── api/routes/
-│   │   ├── customers.py
-│   │   ├── menu.py
-│   │   └── restaurants.py
+│   ├── api/
+│   │   ├── dependencies.py         # get_current_customer (Bearer token -> customer)
+│   │   └── routes/
+│   │       ├── auth.py
+│   │       ├── customers.py
+│   │       ├── menu.py
+│   │       └── restaurants.py
 │   ├── core/
-│   │   ├── config.py               # DATA_DIR and data file paths
-│   │   ├── errors.py               # shared domain errors (404, 409, ...)
-│   │   └── security.py             # salted password hashing
+│   │   ├── config.py               # DATA_DIR, data file paths, token settings
+│   │   ├── errors.py               # shared domain errors (401, 404, 409, ...)
+│   │   └── security.py             # salted password hashing, login tokens
 │   ├── repositories/
 │   │   ├── customer_repository.py
 │   │   ├── json_repository.py      # JsonRepository base: load, atomic save, next_id
 │   │   ├── menu_item_repository.py
 │   │   └── restaurant_repository.py
 │   ├── schemas/
+│   │   ├── auth.py
 │   │   ├── customer.py
 │   │   ├── error.py
 │   │   ├── health.py
 │   │   ├── menu_item.py
 │   │   └── restaurant.py
 │   ├── services/
+│   │   ├── auth_service.py
 │   │   ├── customer_service.py
 │   │   ├── menu_service.py
 │   │   └── restaurant_service.py
@@ -312,6 +366,7 @@ Food-delivery-app/
 │   └── team-agreement.md
 ├── tests/
 │   ├── conftest.py                 # isolated temporary data for every test
+│   ├── test_auth.py
 │   ├── test_customers.py
 │   ├── test_health.py
 │   ├── test_integration.py
