@@ -228,6 +228,17 @@ DATA_DIR=/absolute/path/to/test-data python -m uvicorn app.main:app --reload
 
 The configured directory must contain `restaurants.json`, `menu_items.json` and `customers.json`. This setting allows automated tests to use isolated temporary data instead of modifying the committed representative data.
 
+Login tokens are configured with two more environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SECRET_KEY` | A random key generated at startup | Signs login tokens. Without it, every token stops working when the server restarts (including each `--reload`), so set it to keep users signed in. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | How long a login token stays valid. |
+
+```bash
+SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" python -m uvicorn app.main:app --reload
+```
+
 ## Representative Data
 
 Representative restaurant data is stored in:
@@ -261,6 +272,7 @@ python -m pytest -q
 | `tests/test_restaurants.py` | Restaurant endpoints, search and filters, validation, the repository and service, and committed data integrity. |
 | `tests/test_menu.py` | Menu endpoints, validation, duplicate names, the repository, and committed data integrity. |
 | `tests/test_customers.py` | Customer registration, duplicate emails (case-insensitive), validation, password hashing, the repository and service, and committed data integrity. |
+| `tests/test_auth.py` | Login tokens (round trip, expired, tampered, forged, malformed), the `SECRET_KEY` setting, and looking a customer up by id. |
 | `tests/test_integration.py` | The complete vertical slice (restaurant + menu through every layer to the JSON files), error handling (`404`/`405`/`422`/JSON `500`), API documentation, and **persistence across a real restart**: the test starts `uvicorn` with `DATA_DIR` set to a temporary folder, writes data, stops the server, starts it again and reads the data back. |
 
 **Isolated test data:** `tests/conftest.py` copies `data/restaurants.json`, `data/menu_items.json` and `data/customers.json` into a fresh temporary folder before **every** test and points the routes at those copies. Tests can create and update freely without changing the committed data or affecting each other. Several tests check that the files in `data/` are unchanged afterwards.
@@ -278,9 +290,9 @@ Food-delivery-app/
 │   │   ├── menu.py
 │   │   └── restaurants.py
 │   ├── core/
-│   │   ├── config.py               # DATA_DIR and data file paths
+│   │   ├── config.py               # DATA_DIR, data file paths, token settings
 │   │   ├── errors.py               # shared domain errors (404, 409, ...)
-│   │   └── security.py             # salted password hashing
+│   │   └── security.py             # salted password hashing, login tokens
 │   ├── repositories/
 │   │   ├── customer_repository.py
 │   │   ├── json_repository.py      # JsonRepository base: load, atomic save, next_id
@@ -312,6 +324,7 @@ Food-delivery-app/
 │   └── team-agreement.md
 ├── tests/
 │   ├── conftest.py                 # isolated temporary data for every test
+│   ├── test_auth.py
 │   ├── test_customers.py
 │   ├── test_health.py
 │   ├── test_integration.py
