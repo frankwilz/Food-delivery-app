@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from app.api.routes import menu, restaurants
+from app.api.routes import customers, menu, restaurants
 from app.core.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from app.schemas.error import ErrorResponse
 from app.schemas.health import HealthResponse
@@ -69,3 +69,4 @@ def health() -> HealthResponse:
 
 app.include_router(restaurants.router)
 app.include_router(menu.router)
+app.include_router(customers.router)
