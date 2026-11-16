@@ -1,4 +1,4 @@
-from app.core.errors import ConflictError
+from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.core.security import hash_password
 from app.repositories.customer_repository import CustomerRepository
 from app.schemas.customer import CustomerCreate
@@ -7,6 +7,16 @@ from app.schemas.customer import CustomerCreate
 class DuplicateEmailError(ConflictError):
     def __init__(self, email: str):
         super().__init__(f"An account with email '{email}' already exists")
+
+
+class CustomerNotFoundError(NotFoundError):
+    def __init__(self, customer_id: int):
+        super().__init__(f"Customer {customer_id} not found")
+
+
+class CustomerDeactivatedError(ForbiddenError):
+    def __init__(self, customer_id: int):
+        super().__init__(f"Customer {customer_id} has been deactivated")
 
 
 class CustomerService:
@@ -28,3 +38,16 @@ class CustomerService:
                 "is_active": True,
             }
         )
+
+    def get_active_customer(self, customer_id: int) -> dict:
+        """Return the customer if the account exists and is active, otherwise raise a clear error.
+
+        This is the single rule for "may this customer use the app?". The cart and checkout
+        call it instead of checking `is_active` themselves.
+        """
+        customer = self.repository.get_by_id(customer_id)
+        if customer is None:
+            raise CustomerNotFoundError(customer_id)
+        if not customer["is_active"]:
+            raise CustomerDeactivatedError(customer_id)
+        return customer

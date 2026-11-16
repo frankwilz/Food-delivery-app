@@ -108,6 +108,7 @@ After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with
 | `POST` | `/restaurants/{restaurant_id}/menu` | Adds a menu item; the server assigns the id (201; 404; 409 duplicate name; 422 invalid body). |
 | `PATCH` | `/restaurants/{restaurant_id}/menu/{item_id}` | Partially updates a menu item (200; 400 empty body; 404; 409 duplicate name; 422). |
 | `POST` | `/customers` | Registers a customer account; the server assigns the id, sets `role` to `customer` and stores only a salted password hash (201; 409 duplicate email, case-insensitive; 422 invalid body). |
+| `GET` | `/customers/me` | Returns the signed-in customer (200; 401 missing, invalid or expired token). Requires `Authorization: Bearer <token>`. |
 | `POST` | `/auth/login` | Checks an email and password and returns a signed token (200; 401 wrong email or password; 422 invalid body). |
 | `GET` | `/docs` | Opens FastAPI's interactive Swagger UI. |
 | `GET` | `/openapi.json` | Returns the generated OpenAPI schema. |
@@ -221,7 +222,11 @@ curl -X POST http://127.0.0.1:8000/auth/login \
 {"access_token": "<token>", "token_type": "bearer"}
 ```
 
-The token is sent on later requests in the `Authorization: Bearer <token>` header. In `/docs`, paste it into the **Authorize** button (shown once an endpoint requires a signed-in customer).
+The token is sent on later requests in the `Authorization: Bearer <token>` header. In `/docs`, click **Authorize**, paste the token and every protected endpoint is then called with it. For example, to read the signed-in customer:
+
+```bash
+curl http://127.0.0.1:8000/customers/me -H "Authorization: Bearer <token>"
+```
 
 ```text
 POST /auth/login
@@ -234,6 +239,7 @@ POST /auth/login
 - **Token:** a JWT signed with HS256 (`app/core/security.py`, using PyJWT). It holds only the customer id and an expiry time (60 minutes by default), never the email, role or password.
 - **Signing key:** read from the `SECRET_KEY` environment variable and never hard-coded (see [Configuration](#configuration)).
 - **Protecting an endpoint:** add `customer: dict = Depends(get_current_customer)` from `app/api/dependencies.py`. It reads the header, checks the token and loads the customer, or responds with `401`.
+- **Active customers:** `CustomerService.get_active_customer(customer_id)` returns the customer, or raises a clear error if the account is missing (404) or deactivated (403). The cart and checkout call it instead of checking `is_active` themselves.
 - **Wrong email or wrong password:** both return the same `401` and message, so the response does not reveal which emails have accounts.
 
 ## Error Handling

@@ -6,7 +6,14 @@ from app.core.config import BASE_DIR
 from app.core.security import hash_password, verify_password
 from app.repositories.customer_repository import CustomerRepository
 from app.schemas.customer import Customer, CustomerCreate
-from app.services.customer_service import CustomerService, DuplicateEmailError
+from app.core.errors import ForbiddenError, NotFoundError
+from app.core.security import create_access_token
+from app.services.customer_service import (
+    CustomerDeactivatedError,
+    CustomerNotFoundError,
+    CustomerService,
+    DuplicateEmailError,
+)
 
 VALID_CUSTOMER = {
     "name": "Jordan Lee",
@@ -194,3 +201,135 @@ def test_customer_error_responses_are_documented(client):
     post = client.get("/openapi.json").json()["paths"]["/customers"]["post"]
 
     assert {"201", "409", "422"} <= post["responses"].keys()
+
+
+# --- GET /customers/me ---
+
+ANA = {
+    "id": 1,
+    "name": "Ana Souza",
+    "email": "ana.souza@example.com",
+    "delivery_address": "1155 Bernard Avenue, Kelowna",
+    "role": "customer",
+    "is_active": True,
+}
+
+
+def login(client, email: str, password: str) -> dict:
+    token = client.post("/auth/login", json={"email": email, "password": password}).json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_get_me_returns_the_signed_in_customer(client):
+    response = client.get("/customers/me", headers=login(client, "ana.souza@example.com", "Ana-demo-2026"))
+
+    assert response.status_code == 200
+    assert response.json() == ANA
+
+
+def test_get_me_returns_whoever_the_token_belongs_to(client):
+    ben = client.get("/customers/me", headers=login(client, "ben.carter@example.com", "Ben-demo-2026"))
+    manager = client.get("/customers/me", headers=login(client, "dev.patel@example.com", "Dev-demo-2026"))
+
+    assert (ben.json()["id"], ben.json()["role"]) == (2, "customer")
+    assert (manager.json()["id"], manager.json()["role"]) == (4, "manager")
+
+
+def test_get_me_never_returns_the_password_hash(client):
+    response = client.get("/customers/me", headers=login(client, "ana.souza@example.com", "Ana-demo-2026"))
+
+    assert "password" not in response.text
+    assert "pbkdf2" not in response.text
+
+
+def test_get_me_works_for_a_newly_registered_customer(client):
+    client.post("/customers", json=VALID_CUSTOMER)
+
+    response = client.get("/customers/me", headers=login(client, VALID_CUSTOMER["email"], VALID_CUSTOMER["password"]))
+
+    assert response.status_code == 200
+    assert response.json()["id"] == 5
+    assert response.json()["email"] == "jordan.lee@example.com"
+
+
+def test_get_me_without_a_token_returns_401(client):
+    response = client.get("/customers/me")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Authorization": "Bearer not-a-token"},
+        {"Authorization": "Basic YW5hOnBhc3N3b3Jk"},
+        {"Authorization": "Bearer " + create_access_token(999)},
+    ],
+    ids=["invalid-token", "not-a-bearer-token", "token-for-a-missing-customer"],
+)
+def test_get_me_with_a_bad_token_returns_401(client, headers):
+    response = client.get("/customers/me", headers=headers)
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_get_me_does_not_change_the_customers_file(client, tmp_path):
+    before = stored_customers(tmp_path)
+
+    client.get("/customers/me", headers=login(client, "ana.souza@example.com", "Ana-demo-2026"))
+
+    assert stored_customers(tmp_path) == before
+
+
+def test_get_me_is_documented_and_shows_the_authorize_button(client):
+    schema = client.get("/openapi.json").json()
+    get_me = schema["paths"]["/customers/me"]["get"]
+
+    assert {"200", "401"} <= get_me["responses"].keys()
+    # A Bearer scheme that an endpoint requires is what makes Swagger show the Authorize button
+    assert schema["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+    assert get_me["security"] == [{"HTTPBearer": []}]
+
+
+# --- CustomerService.get_active_customer (shared by cart and checkout) ---
+
+
+def test_get_active_customer_returns_an_active_customer(tmp_path):
+    service = CustomerService(CustomerRepository(tmp_path / "customers.json"))
+
+    customer = service.get_active_customer(1)
+
+    assert customer["email"] == "ana.souza@example.com"
+    assert customer["is_active"] is True
+
+
+def test_get_active_customer_missing_customer_raises_not_found(tmp_path):
+    service = CustomerService(CustomerRepository(tmp_path / "customers.json"))
+
+    with pytest.raises(CustomerNotFoundError, match="Customer 999 not found") as error:
+        service.get_active_customer(999)
+    assert isinstance(error.value, NotFoundError)  # becomes a 404
+
+
+def test_get_active_customer_deactivated_customer_raises_forbidden(tmp_path):
+    service = CustomerService(CustomerRepository(tmp_path / "customers.json"))
+
+    # Customer 3 (Chloe Martin) is deactivated in the sample data
+    with pytest.raises(CustomerDeactivatedError, match="Customer 3 has been deactivated") as error:
+        service.get_active_customer(3)
+    assert isinstance(error.value, ForbiddenError)  # becomes a 403
+
+
+def test_get_active_customer_follows_later_changes(tmp_path):
+    repository = CustomerRepository(tmp_path / "customers.json")
+    service = CustomerService(repository)
+    customers = repository.get_all()
+    customers[0]["is_active"] = False
+    repository.save(customers)
+
+    # The check always reads the current file, as checkout needs
+    with pytest.raises(CustomerDeactivatedError):
+        service.get_active_customer(1)
