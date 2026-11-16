@@ -5,8 +5,14 @@ import pytest
 from app.core.config import BASE_DIR
 from app.repositories.menu_item_repository import MenuItemRepository
 from app.repositories.restaurant_repository import RestaurantRepository
-from app.schemas.menu_item import MenuItem, MenuItemCreate
-from app.services.menu_service import MenuService
+from app.schemas.menu_item import MenuItem, MenuItemCreate, MenuItemUpdate
+from app.core.errors import NotFoundError
+from app.services.menu_service import (
+    MenuItemDeactivatedError,
+    MenuItemNotOrderableError,
+    MenuItemUnavailableError,
+    MenuService,
+)
 
 VALID_ITEM = {
     "name": "Garlic Bread",
@@ -57,6 +63,7 @@ def test_get_menu_item_returns_item(client):
         "price": 6.49,
         "category": "Mains",
         "is_available": True,
+        "is_active": True,
     }
 
 
@@ -89,7 +96,7 @@ def test_create_menu_item_returns_201_and_persists(client):
 
     assert response.status_code == 201
     created = response.json()
-    assert created == {"id": 6, "restaurant_id": 1, "is_available": True, **VALID_ITEM}
+    assert created == {"id": 6, "restaurant_id": 1, "is_available": True, "is_active": True, **VALID_ITEM}
 
     fetched = client.get("/restaurants/1/menu/6")
     assert fetched.status_code == 200
@@ -390,3 +397,235 @@ def test_menu_error_responses_are_documented(client):
     assert "404" in menu["get"]["responses"]
     assert {"201", "404", "409", "422"} <= menu["post"]["responses"].keys()
     assert {"200", "400", "404", "409", "422"} <= item["patch"]["responses"].keys()
+
+
+# --- Availability (is_available) ---
+
+
+def test_mark_item_unavailable_and_available_again(client):
+    unavailable = client.patch("/restaurants/1/menu/1", json={"is_available": False})
+
+    assert unavailable.status_code == 200
+    assert unavailable.json()["is_available"] is False
+    assert client.get("/restaurants/1/menu/1").json()["is_available"] is False
+
+    available = client.patch("/restaurants/1/menu/1", json={"is_available": True})
+    assert available.json()["is_available"] is True
+
+
+def test_unavailable_items_stay_on_the_menu_and_are_marked(client):
+    # Item 3 (Chicken Wings) is unavailable in the sample data
+    items = {item["id"]: item for item in client.get("/restaurants/1/menu").json()}
+
+    assert items[3]["is_available"] is False
+    assert items[3]["is_active"] is True
+
+
+# --- Deactivation (is_active, soft delete) ---
+
+
+def stored_items(tmp_path) -> list[dict]:
+    return json.loads((tmp_path / "menu_items.json").read_text(encoding="utf-8"))
+
+
+def test_new_item_starts_active(client):
+    response = client.post("/restaurants/1/menu", json=VALID_ITEM)
+
+    assert response.json()["is_active"] is True
+
+
+def test_create_menu_item_rejects_client_supplied_is_active(client):
+    response = client.post("/restaurants/1/menu", json={**VALID_ITEM, "is_active": False})
+
+    assert response.status_code == 422
+
+
+def test_delete_deactivates_the_item_and_returns_it(client):
+    response = client.delete("/restaurants/1/menu/2")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": 2,
+        "restaurant_id": 1,
+        "name": "Caesar Salad",
+        "description": "Romaine, parmesan, croutons and Caesar dressing",
+        "price": 9.49,
+        "category": "Salads",
+        "is_available": True,
+        "is_active": False,
+    }
+
+
+def test_delete_keeps_the_record_in_the_file(client, tmp_path):
+    before = stored_items(tmp_path)
+
+    client.delete("/restaurants/1/menu/2")
+
+    after = stored_items(tmp_path)
+    assert [item["id"] for item in after] == [item["id"] for item in before]
+    assert next(item for item in after if item["id"] == 2)["is_active"] is False
+    # Nothing else about the item, and no other item, was changed
+    assert [{**item, "is_active": True} for item in after] == before
+
+
+def test_delete_is_idempotent(client):
+    first = client.delete("/restaurants/1/menu/2")
+    second = client.delete("/restaurants/1/menu/2")
+
+    assert second.status_code == 200
+    assert second.json() == first.json()
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/restaurants/1/menu/999", "/restaurants/2/menu/1", "/restaurants/999/menu/1"],
+    ids=["unknown-item", "item-from-other-restaurant", "unknown-restaurant"],
+)
+def test_delete_missing_item_returns_404(client, tmp_path, path):
+    before = stored_items(tmp_path)
+
+    response = client.delete(path)
+
+    assert response.status_code == 404
+    assert stored_items(tmp_path) == before
+
+
+def test_deactivated_item_is_hidden_from_the_menu(client):
+    client.delete("/restaurants/1/menu/2")
+
+    response = client.get("/restaurants/1/menu")
+
+    assert [item["id"] for item in response.json()] == [1, 3]
+
+
+def test_include_inactive_lists_deactivated_items_clearly_marked(client):
+    client.delete("/restaurants/1/menu/2")
+
+    response = client.get("/restaurants/1/menu", params={"include_inactive": True})
+
+    assert [(item["id"], item["is_active"]) for item in response.json()] == [(1, True), (2, False), (3, True)]
+
+
+def test_include_inactive_must_be_a_boolean(client):
+    assert client.get("/restaurants/1/menu", params={"include_inactive": "maybe"}).status_code == 422
+
+
+def test_deactivated_item_can_still_be_fetched_by_id(client):
+    client.delete("/restaurants/1/menu/2")
+
+    response = client.get("/restaurants/1/menu/2")
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+
+
+def test_patch_can_deactivate_and_reactivate_an_item(client):
+    deactivated = client.patch("/restaurants/1/menu/2", json={"is_active": False})
+    assert deactivated.status_code == 200
+    assert deactivated.json()["is_active"] is False
+    assert [item["id"] for item in client.get("/restaurants/1/menu").json()] == [1, 3]
+
+    reactivated = client.patch("/restaurants/1/menu/2", json={"is_active": True})
+    assert reactivated.json()["is_active"] is True
+    assert [item["id"] for item in client.get("/restaurants/1/menu").json()] == [1, 2, 3]
+
+
+def test_patch_is_active_null_returns_422(client):
+    assert client.patch("/restaurants/1/menu/2", json={"is_active": None}).status_code == 422
+
+
+def test_deactivated_item_still_reserves_its_name(client):
+    # The item can be reactivated, so its name stays taken
+    client.delete("/restaurants/1/menu/2")
+
+    response = client.post("/restaurants/1/menu", json={**VALID_ITEM, "name": "caesar salad"})
+
+    assert response.status_code == 409
+
+
+# --- MenuService.get_orderable_item (shared by cart and checkout) ---
+
+
+@pytest.fixture
+def menu_service(tmp_path) -> MenuService:
+    return MenuService(
+        MenuItemRepository(tmp_path / "menu_items.json"),
+        RestaurantRepository(tmp_path / "restaurants.json"),
+    )
+
+
+def test_get_orderable_item_returns_an_active_available_item(menu_service):
+    item = menu_service.get_orderable_item(1)
+
+    assert item["id"] == 1
+    assert item["name"] == "Pepperoni Pizza"
+    assert item["price"] == 16.99
+
+
+def test_get_orderable_item_unknown_item_raises_not_found(menu_service):
+    with pytest.raises(NotFoundError, match="Menu item 999 not found"):
+        menu_service.get_orderable_item(999)
+
+
+def test_get_orderable_item_unavailable_item_raises(menu_service):
+    # Item 3 (Chicken Wings) is unavailable in the sample data
+    with pytest.raises(MenuItemUnavailableError, match=r"Menu item 3 \(Chicken Wings\) is currently unavailable"):
+        menu_service.get_orderable_item(3)
+
+
+def test_get_orderable_item_deactivated_item_raises(menu_service):
+    menu_service.deactivate_menu_item(1, 2)
+
+    with pytest.raises(MenuItemDeactivatedError, match=r"Menu item 2 \(Caesar Salad\) is no longer on the menu"):
+        menu_service.get_orderable_item(2)
+
+
+def test_get_orderable_item_reports_deactivated_before_unavailable(menu_service):
+    menu_service.deactivate_menu_item(1, 3)
+
+    with pytest.raises(MenuItemDeactivatedError):
+        menu_service.get_orderable_item(3)
+
+
+def test_both_reasons_can_be_caught_as_not_orderable(menu_service):
+    menu_service.deactivate_menu_item(1, 2)
+
+    for item_id in (2, 3):
+        with pytest.raises(MenuItemNotOrderableError):
+            menu_service.get_orderable_item(item_id)
+
+
+def test_get_orderable_item_follows_later_changes(menu_service):
+    # The check always reads the current menu, as checkout needs
+    menu_service.deactivate_menu_item(1, 1)
+    with pytest.raises(MenuItemDeactivatedError):
+        menu_service.get_orderable_item(1)
+
+    menu_service.update_menu_item(1, 1, MenuItemUpdate(is_active=True))
+    assert menu_service.get_orderable_item(1)["id"] == 1
+
+
+def test_item_saved_before_is_active_existed_counts_as_active(menu_service, tmp_path):
+    legacy = [{key: value for key, value in item.items() if key != "is_active"} for item in stored_items(tmp_path)]
+    (tmp_path / "menu_items.json").write_text(json.dumps(legacy), encoding="utf-8")
+
+    assert menu_service.get_orderable_item(1)["id"] == 1
+    assert [item["id"] for item in menu_service.list_menu_items(1)] == [1, 2, 3]
+
+
+# --- Committed data and documentation for is_active ---
+
+
+def test_committed_menu_items_all_have_is_active():
+    items = json.loads((BASE_DIR / "data" / "menu_items.json").read_text(encoding="utf-8"))
+
+    assert all(isinstance(item.get("is_active"), bool) for item in items)
+
+
+def test_deactivate_endpoint_is_documented(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    delete = paths["/restaurants/{restaurant_id}/menu/{item_id}"]["delete"]
+    list_parameters = [parameter["name"] for parameter in paths["/restaurants/{restaurant_id}/menu"]["get"]["parameters"]]
+
+    assert {"200", "404", "422"} <= delete["responses"].keys()
+    assert "include_inactive" in list_parameters
