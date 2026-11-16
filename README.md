@@ -103,10 +103,11 @@ After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with
 | `GET` | `/restaurants/{restaurant_id}` | Returns one restaurant's details (404 if it does not exist). |
 | `POST` | `/restaurants` | Creates a restaurant; the server assigns the id (201; 409 duplicate name + address; 422 invalid body). |
 | `PATCH` | `/restaurants/{restaurant_id}` | Partially updates a restaurant (200; 400 empty body; 404; 409 duplicate; 422). |
-| `GET` | `/restaurants/{restaurant_id}/menu` | Returns all menu items for a restaurant (404 if the restaurant does not exist). |
+| `GET` | `/restaurants/{restaurant_id}/menu` | Returns a restaurant's menu items. Deactivated items are hidden unless `include_inactive=true` is sent (404 if the restaurant does not exist). |
 | `GET` | `/restaurants/{restaurant_id}/menu/{item_id}` | Returns one menu item (404 if missing or owned by another restaurant). |
 | `POST` | `/restaurants/{restaurant_id}/menu` | Adds a menu item; the server assigns the id (201; 404; 409 duplicate name; 422 invalid body). |
-| `PATCH` | `/restaurants/{restaurant_id}/menu/{item_id}` | Partially updates a menu item (200; 400 empty body; 404; 409 duplicate name; 422). |
+| `PATCH` | `/restaurants/{restaurant_id}/menu/{item_id}` | Partially updates a menu item, including `is_available` and `is_active` (200; 400 empty body; 404; 409 duplicate name; 422). |
+| `DELETE` | `/restaurants/{restaurant_id}/menu/{item_id}` | Deactivates a menu item (soft delete: sets `is_active` to `false` and keeps the record) and returns it (200; 404). |
 | `POST` | `/customers` | Registers a customer account; the server assigns the id, sets `role` to `customer` and stores only a salted password hash (201; 409 duplicate email, case-insensitive; 422 invalid body). |
 | `GET` | `/customers/me` | Returns the signed-in customer (200; 401 missing, invalid or expired token). Requires `Authorization: Bearer <token>`. |
 | `POST` | `/auth/login` | Checks an email and password and returns a signed token (200; 401 wrong email or password; 422 invalid body). |
@@ -181,7 +182,7 @@ The route does not read the JSON file directly.
 Menu requests follow the same layered path as restaurants:
 
 ```text
-GET/POST/PATCH /restaurants/{restaurant_id}/menu[/{item_id}]
+GET/POST/PATCH/DELETE /restaurants/{restaurant_id}/menu[/{item_id}]
   -> FastAPI routes in app/api/routes/menu.py
   -> MenuService in app/services/menu_service.py
   -> MenuItemRepository in app/repositories/menu_item_repository.py
@@ -189,8 +190,12 @@ GET/POST/PATCH /restaurants/{restaurant_id}/menu[/{item_id}]
 ```
 
 - **Schemas** (`app/schemas/menu_item.py`): `MenuItem` (response), `MenuItemCreate` (POST body, no `id`/`restaurant_id`), `MenuItemUpdate` (PATCH body, every field optional). Errors use the shared `ErrorResponse` in `app/schemas/error.py`.
-- **Fields:** `id`, `restaurant_id`, `name`, `description`, `price` (> 0), `category`, `is_available`.
+- **Fields:** `id`, `restaurant_id`, `name`, `description`, `price` (> 0), `category`, `is_available`, `is_active`.
 - **Service rules:** the restaurant must exist; an item is only reachable through the restaurant that owns it; item names are unique within a restaurant (case-insensitive, 409); a PATCH with no fields is rejected (400).
+- **Availability and deactivation:** an item has two separate flags.
+  - `is_available: false` means temporarily out of stock. The item stays on the menu, marked as unavailable. Set it with `PATCH`.
+  - `is_active: false` means removed from the menu. `DELETE` sets it (a soft delete, so the record and its id are kept for carts and orders that refer to it), and `PATCH` with `is_active: true` puts the item back. Deactivated items are hidden from the menu list unless `include_inactive=true` is sent, can still be fetched by id, and keep their name reserved. New items always start active.
+- **One rule for ordering:** `MenuService.get_orderable_item(item_id)` returns the item only if it exists, is active and is available. Otherwise it raises a clear error: not found (404), or `MenuItemDeactivatedError` / `MenuItemUnavailableError` (both 409, both subclasses of `MenuItemNotOrderableError`). The cart and checkout call this method instead of checking the flags themselves.
 - **Repository:** the only code that reads or writes `data/menu_items.json`. New ids are `max(existing ids) + 1`, and `id`/`restaurant_id` are never overwritten. Each save writes a temporary file and swaps it in with `os.replace`, so a crash cannot leave a half-written file.
 
 Example: add a menu item.
@@ -307,7 +312,7 @@ python -m pytest -q
 | --- | --- |
 | `tests/test_health.py` | `GET /health`. |
 | `tests/test_restaurants.py` | Restaurant endpoints, search and filters, validation, the repository and service, and committed data integrity. |
-| `tests/test_menu.py` | Menu endpoints, validation, duplicate names, the repository, and committed data integrity. |
+| `tests/test_menu.py` | Menu endpoints, validation, duplicate names, availability, deactivation (soft delete), `get_orderable_item`, the repository, and committed data integrity. |
 | `tests/test_customers.py` | Customer registration, duplicate emails (case-insensitive), validation, password hashing, the repository and service, and committed data integrity. |
 | `tests/test_auth.py` | Login (valid, wrong password, unknown email, invalid body), tokens (expired, tampered, forged, malformed), `get_current_customer` (missing, invalid and expired tokens), and the `SECRET_KEY` setting. |
 | `tests/test_integration.py` | The complete vertical slice (restaurant + menu through every layer to the JSON files), error handling (`404`/`405`/`422`/JSON `500`), API documentation, and **persistence across a real restart**: the test starts `uvicorn` with `DATA_DIR` set to a temporary folder, writes data, stops the server, starts it again and reads the data back. |

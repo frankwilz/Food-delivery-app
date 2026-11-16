@@ -6,7 +6,8 @@
         "description": "Classic pizza with mozzarella and pepperoni",
         "price": 16.99,
         "category": "Pizza",
-        "is_available": true
+        "is_available": true,
+        "is_active": true
     },
     {
         "id": 2,
@@ -15,7 +16,8 @@
         "description": "Romaine, parmesan, croutons and Caesar dressing",
         "price": 9.49,
         "category": "Salads",
-        "is_available": true
+        "is_available": true,
+        "is_active": true
     },
     {
         "id": 3,
@@ -24,7 +26,8 @@
         "description": "One pound of wings with your choice of sauce",
         "price": 13.99,
         "category": "Appetizers",
-        "is_available": false
+        "is_available": false,
+        "is_active": true
     },
     {
         "id": 4,
@@ -33,7 +36,8 @@
         "description": "Seasoned beef, nacho cheese and a crunchy tostada shell",
         "price": 6.49,
         "category": "Mains",
-        "is_available": true
+        "is_available": true,
+        "is_active": true
     },
     {
         "id": 5,
@@ -42,6 +46,7 @@
         "description": "Crispy twists dusted with cinnamon sugar",
         "price": 2.29,
         "category": "Desserts",
-        "is_available": true
+        "is_available": true,
+        "is_active": true
     }
 ]

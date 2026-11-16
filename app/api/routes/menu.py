@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.core.config import MENU_ITEMS_FILE, RESTAURANTS_FILE
 from app.repositories.menu_item_repository import MenuItemRepository
@@ -28,18 +28,29 @@ def get_menu_service() -> MenuService:
     "/restaurants/{restaurant_id}/menu",
     response_model=list[MenuItem],
     summary="List a restaurant's menu",
-    description="Returns every menu item that belongs to the given restaurant.",
+    description=(
+        "Returns the menu items that belong to the given restaurant. Items that are temporarily "
+        "unavailable are included with `is_available: false`. Items that were removed from the menu "
+        "(deactivated) are hidden unless `include_inactive=true` is sent."
+    ),
     responses=RESTAURANT_NOT_FOUND,
 )
-def list_menu_items(restaurant_id: int, service: MenuService = Depends(get_menu_service)):
-    return service.list_menu_items(restaurant_id)
+def list_menu_items(
+    restaurant_id: int,
+    include_inactive: bool = Query(default=False, description="Also return deactivated items."),
+    service: MenuService = Depends(get_menu_service),
+):
+    return service.list_menu_items(restaurant_id, include_inactive)
 
 
 @router.get(
     "/restaurants/{restaurant_id}/menu/{item_id}",
     response_model=MenuItem,
     summary="Get a menu item",
-    description="Returns a single menu item belonging to the given restaurant.",
+    description=(
+        "Returns a single menu item belonging to the given restaurant. A deactivated item is still "
+        "returned, marked with `is_active: false`."
+    ),
     responses=ITEM_NOT_FOUND,
 )
 def get_menu_item(restaurant_id: int, item_id: int, service: MenuService = Depends(get_menu_service)):
@@ -73,7 +84,9 @@ def create_menu_item(
     description=(
         "Partially updates a menu item belonging to the given restaurant. Only the fields "
         "provided are changed; the item ID and restaurant cannot be changed. At least one field "
-        "must be sent, and a new name must not clash with another item at the same restaurant."
+        "must be sent, and a new name must not clash with another item at the same restaurant. "
+        "Send `is_available: false` to mark an item as out of stock, or `is_active: true` to put a "
+        "deactivated item back on the menu."
     ),
     responses={**EMPTY_UPDATE, **ITEM_NOT_FOUND, **DUPLICATE_NAME},
 )
@@ -84,3 +97,18 @@ def update_menu_item(
     service: MenuService = Depends(get_menu_service),
 ):
     return service.update_menu_item(restaurant_id, item_id, changes)
+
+
+@router.delete(
+    "/restaurants/{restaurant_id}/menu/{item_id}",
+    response_model=MenuItem,
+    summary="Deactivate a menu item",
+    description=(
+        "Removes a menu item from the restaurant's menu by setting `is_active` to `false` (a soft "
+        "delete). The record is kept, so its id stays stable, and the updated item is returned. "
+        "Deactivating an item that is already deactivated succeeds and changes nothing."
+    ),
+    responses=ITEM_NOT_FOUND,
+)
+def deactivate_menu_item(restaurant_id: int, item_id: int, service: MenuService = Depends(get_menu_service)):
+    return service.deactivate_menu_item(restaurant_id, item_id)
