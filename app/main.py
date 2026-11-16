@@ -5,8 +5,8 @@ import logging
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from app.api.routes import customers, menu, restaurants
-from app.core.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.api.routes import auth, customers, menu, restaurants
+from app.core.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 from app.schemas.error import ErrorResponse
 from app.schemas.health import HealthResponse
 
@@ -35,6 +35,7 @@ def data_storage_error(request: Request, exc: Exception) -> JSONResponse:
 # so routes need no try/except. Subclasses (e.g. RestaurantNotFoundError) use their base's code.
 DOMAIN_ERROR_STATUS = {
     BadRequestError: status.HTTP_400_BAD_REQUEST,
+    UnauthorizedError: status.HTTP_401_UNAUTHORIZED,
     ForbiddenError: status.HTTP_403_FORBIDDEN,
     NotFoundError: status.HTTP_404_NOT_FOUND,
     ConflictError: status.HTTP_409_CONFLICT,
@@ -43,7 +44,9 @@ DOMAIN_ERROR_STATUS = {
 
 def domain_error(request: Request, exc: Exception) -> JSONResponse:
     status_code = next(code for error, code in DOMAIN_ERROR_STATUS.items() if isinstance(exc, error))
-    return JSONResponse(status_code=status_code, content={"detail": str(exc)})
+    # A 401 must say how to authenticate (RFC 9110), which is also what Swagger and browsers expect
+    headers = {"WWW-Authenticate": "Bearer"} if status_code == status.HTTP_401_UNAUTHORIZED else None
+    return JSONResponse(status_code=status_code, content={"detail": str(exc)}, headers=headers)
 
 
 for error_class in DOMAIN_ERROR_STATUS:
@@ -70,3 +73,4 @@ def health() -> HealthResponse:
 app.include_router(restaurants.router)
 app.include_router(menu.router)
 app.include_router(customers.router)
+app.include_router(auth.router)

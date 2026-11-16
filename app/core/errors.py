@@ -9,6 +9,10 @@ class BadRequestError(Exception):
     """The request is well-formed but cannot be acted on (400)."""
 
 
+class UnauthorizedError(Exception):
+    """The caller is not signed in, or their email, password or token is wrong (401)."""
+
+
 class ForbiddenError(Exception):
     """The caller is not allowed to perform this action (403)."""
 
