@@ -1,7 +1,7 @@
-from app.core.errors import ConflictError, ForbiddenError, NotFoundError
+from app.core.errors import ConflictError, EmptyUpdateError, ForbiddenError, NotFoundError
 from app.core.security import hash_password
 from app.repositories.customer_repository import CustomerRepository
-from app.schemas.customer import CustomerCreate
+from app.schemas.customer import CustomerCreate, CustomerUpdate
 
 
 class DuplicateEmailError(ConflictError):
@@ -48,6 +48,41 @@ class CustomerService:
         customer = self.repository.get_by_id(customer_id)
         if customer is None:
             raise CustomerNotFoundError(customer_id)
-        if not customer["is_active"]:
-            raise CustomerDeactivatedError(customer_id)
-        return customer
+        return ensure_active(customer)
+
+    def update_profile(self, customer_id: int, changes: CustomerUpdate) -> dict:
+        """Change the customer's name, email and/or delivery address, and return the updated account.
+
+        `CustomerUpdate` only has those three fields and forbids any other, so `id`, `role`,
+        `is_active` and the password hash can never be changed here (422 before this runs).
+        """
+        fields = changes.model_dump(exclude_unset=True)
+        if not fields:
+            raise EmptyUpdateError()
+        self.get_active_customer(customer_id)
+        if "email" in fields:
+            # Unique ignoring case, like registration; changing only the case of your own email is fine
+            owner = self.repository.get_by_email(fields["email"])
+            if owner is not None and owner["id"] != customer_id:
+                raise DuplicateEmailError(fields["email"])
+        return self.repository.update(customer_id, fields)
+
+    def deactivate(self, customer_id: int) -> dict:
+        """Deactivate an account. The record is kept, so the email stays taken and orders keep their owner.
+
+        From then on the customer cannot log in, and tokens issued before are refused (both 403).
+        """
+        if self.repository.get_by_id(customer_id) is None:
+            raise CustomerNotFoundError(customer_id)
+        return self.repository.update(customer_id, {"is_active": False})
+
+
+def ensure_active(customer: dict) -> dict:
+    """Return the customer if the account is active, otherwise raise `CustomerDeactivatedError` (403).
+
+    Shared by `CustomerService.get_active_customer` and the login and token checks in
+    `AuthService`, so "is this account active?" is decided in one place.
+    """
+    if not customer["is_active"]:
+        raise CustomerDeactivatedError(customer["id"])
+    return customer

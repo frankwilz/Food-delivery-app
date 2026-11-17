@@ -109,8 +109,10 @@ After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with
 | `PATCH` | `/restaurants/{restaurant_id}/menu/{item_id}` | Partially updates a menu item, including `is_available` and `is_active` (200; 400 empty body; 404; 409 duplicate name; 422). |
 | `DELETE` | `/restaurants/{restaurant_id}/menu/{item_id}` | Deactivates a menu item (soft delete: sets `is_active` to `false` and keeps the record) and returns it (200; 404). |
 | `POST` | `/customers` | Registers a customer account; the server assigns the id, sets `role` to `customer` and stores only a salted password hash (201; 409 duplicate email, case-insensitive; 422 invalid body). |
-| `GET` | `/customers/me` | Returns the signed-in customer (200; 401 missing, invalid or expired token). Requires `Authorization: Bearer <token>`. |
-| `POST` | `/auth/login` | Checks an email and password and returns a signed token (200; 401 wrong email or password; 422 invalid body). |
+| `GET` | `/customers/me` | Returns the signed-in customer (200; 401 missing, invalid or expired token; 403 deactivated). Requires `Authorization: Bearer <token>`. |
+| `PATCH` | `/customers/me` | Changes the signed-in customer's `name`, `email` and/or `delivery_address` (200; 400 empty body; 401; 403 deactivated; 409 duplicate email, case-insensitive; 422 invalid value, `null`, or a field that can't be changed here such as `id`, `role`, `is_active` or `password`). |
+| `POST` | `/customers/me/deactivate` | Deactivates the signed-in customer's account and returns it with `is_active: false` (200; 401; 403 already deactivated). The record is kept, so the email stays taken. |
+| `POST` | `/auth/login` | Checks an email and password and returns a signed token (200; 401 wrong email or password; 403 deactivated account with the correct password; 422 invalid body). |
 | `GET` | `/docs` | Opens FastAPI's interactive Swagger UI. |
 | `GET` | `/openapi.json` | Returns the generated OpenAPI schema. |
 
@@ -243,8 +245,10 @@ POST /auth/login
 
 - **Token:** a JWT signed with HS256 (`app/core/security.py`, using PyJWT). It holds only the customer id and an expiry time (60 minutes by default), never the email, role or password.
 - **Signing key:** read from the `SECRET_KEY` environment variable and never hard-coded (see [Configuration](#configuration)).
-- **Protecting an endpoint:** add `customer: dict = Depends(get_current_customer)` from `app/api/dependencies.py`. It reads the header, checks the token and loads the customer, or responds with `401`.
-- **Active customers:** `CustomerService.get_active_customer(customer_id)` returns the customer, or raises a clear error if the account is missing (404) or deactivated (403). The cart and checkout call it instead of checking `is_active` themselves.
+- **Protecting an endpoint:** add `customer: dict = Depends(get_current_customer)` from `app/api/dependencies.py`. It reads the header, checks the token and loads the customer. It responds with `401` if the token is missing, invalid or expired, and `403` if the account has been deactivated.
+- **Active customers:** whether an account is active is decided in one function, `ensure_active` in `app/services/customer_service.py`. `CustomerService.get_active_customer(customer_id)` uses it and also raises 404 for a missing account; the cart and checkout call it instead of checking `is_active` themselves. `AuthService` uses it at login and on every token check.
+- **Updating an account:** `PATCH /customers/me` goes through `CustomerService.update_profile`. The body model, `CustomerUpdate`, only has `name`, `email` and `delivery_address` and forbids any other field, so `id`, `role`, `is_active` and the password hash can never be changed through it.
+- **Deactivation:** `POST /customers/me/deactivate` sets `is_active` to `false` and keeps the record. After that, login returns `403`, but only when the password is correct, so a wrong password never reveals an account's status. Because the customer record is read on every request, tokens issued before deactivation stop working immediately with `403`, even though they have not expired.
 - **Wrong email or wrong password:** both return the same `401` and message, so the response does not reveal which emails have accounts.
 
 ## Error Handling
@@ -255,8 +259,9 @@ Every error response is JSON with the shared `ErrorResponse` shape, `{"detail": 
 | --- | --- |
 | `400` | A `PATCH` body contains no fields. |
 | `401` | The login email or password is wrong, or a protected endpoint was called with a missing, invalid or expired token. The response includes a `WWW-Authenticate: Bearer` header. |
+| `403` | The customer account has been deactivated: at login (with the correct password) and on every protected endpoint, including with a token issued before deactivation. |
 | `404` | The restaurant or menu item does not exist, or the menu item belongs to another restaurant. |
-| `409` | A create or update would duplicate a restaurant (name + address) or a menu item name at the same restaurant. |
+| `409` | A create or update would duplicate a restaurant (name + address), a menu item name at the same restaurant, or a customer email (case-insensitive). |
 | `422` | Invalid input: a wrong type, a value out of range, a missing required field, an unknown or server-assigned field (`id`, `restaurant_id`), `null` in a `PATCH`, or malformed JSON. For `422` responses, `detail` is FastAPI's list of validation errors. |
 | `500` | A data file is missing, unreadable or corrupt. The client receives `{"detail": "Data storage error"}`, and the full error is written to the server log. |
 

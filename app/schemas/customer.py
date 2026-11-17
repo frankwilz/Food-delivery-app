@@ -54,9 +54,16 @@ class CustomerCreate(CustomerBase):
 
 
 class CustomerUpdate(BaseModel):
-    """Partial profile update: only the fields provided are changed."""
+    """Body of `PATCH /customers/me`: only the fields provided are changed.
 
-    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    `extra="forbid"` rejects `id`, `role`, `is_active`, `password` and `password_hash` with a 422.
+    """
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra="forbid",
+        json_schema_extra={"example": {"delivery_address": "3333 University Way, Kelowna"}},
+    )
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     email: str | None = Field(default=None, max_length=254, pattern=EMAIL_PATTERN)

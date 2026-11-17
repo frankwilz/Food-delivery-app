@@ -3,13 +3,16 @@ from fastapi import APIRouter, Depends, status
 from app.api.dependencies import get_current_customer
 from app.core.config import CUSTOMERS_FILE
 from app.repositories.customer_repository import CustomerRepository
-from app.schemas.customer import Customer, CustomerCreate
+from app.schemas.customer import Customer, CustomerCreate, CustomerUpdate
 from app.schemas.error import ErrorResponse
 from app.services.customer_service import CustomerService
 
 router = APIRouter()
 
 NOT_SIGNED_IN = {401: {"model": ErrorResponse, "description": "The token is missing, invalid or expired"}}
+DEACTIVATED = {403: {"model": ErrorResponse, "description": "The customer account has been deactivated"}}
+SIGNED_IN = {**NOT_SIGNED_IN, **DEACTIVATED}
+EMPTY_UPDATE = {400: {"model": ErrorResponse, "description": "The update body contained no fields"}}
 DUPLICATE_EMAIL = {409: {"model": ErrorResponse, "description": "An account with this email already exists"}}
 
 
@@ -41,7 +44,45 @@ def register_customer(customer: CustomerCreate, service: CustomerService = Depen
         "Returns the account that the `Authorization: Bearer <token>` header belongs to. Get a token "
         "from `POST /auth/login`. The password hash is never returned."
     ),
-    responses=NOT_SIGNED_IN,
+    responses=SIGNED_IN,
 )
 def get_signed_in_customer(customer: dict = Depends(get_current_customer)):
     return customer
+
+
+@router.patch(
+    "/customers/me",
+    response_model=Customer,
+    summary="Update my account",
+    description=(
+        "Changes the signed-in customer's `name`, `email` and/or `delivery_address`; only the fields sent "
+        "are changed. At least one field must be sent, and `null` is rejected. The email must stay unique "
+        "(case-insensitive). `id`, `role`, `is_active` and the password cannot be changed here: sending "
+        "them is a 422. Returns the updated account."
+    ),
+    responses={**EMPTY_UPDATE, **SIGNED_IN, **DUPLICATE_EMAIL},
+)
+def update_signed_in_customer(
+    changes: CustomerUpdate,
+    customer: dict = Depends(get_current_customer),
+    service: CustomerService = Depends(get_customer_service),
+):
+    return service.update_profile(customer["id"], changes)
+
+
+@router.post(
+    "/customers/me/deactivate",
+    response_model=Customer,
+    summary="Deactivate my account",
+    description=(
+        "Deactivates the signed-in customer's account and returns it with `is_active: false`. The record "
+        "is kept, so the email stays taken. Afterwards the customer cannot log in, and every token issued "
+        "before, including the one used for this request, is refused with a 403."
+    ),
+    responses=SIGNED_IN,
+)
+def deactivate_signed_in_customer(
+    customer: dict = Depends(get_current_customer),
+    service: CustomerService = Depends(get_customer_service),
+):
+    return service.deactivate(customer["id"])
