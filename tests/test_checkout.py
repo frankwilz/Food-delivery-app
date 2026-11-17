@@ -1,4 +1,4 @@
-"""Tests for 4.1 (#43) validate the cart before checkout, and 4.2 (#44) revalidate the menu."""
+"""Tests for checkout: 4.1 (#43) validate the cart, 4.2 (#44) revalidate the menu, 4.3 (#45) order total."""
 
 import json
 
@@ -19,6 +19,7 @@ from app.services.checkout_service import (
 )
 from app.services.customer_service import CustomerService
 from app.services.menu_service import MenuItemDeactivatedError, MenuItemUnavailableError, MenuService
+from app.services import checkout_service as checkout_module
 
 ANA_ID, CHLOE_DEACTIVATED_ID = 1, 3
 PIZZA, SALAD = 1, 2  # restaurant 1, both orderable
@@ -319,3 +320,86 @@ def test_revalidate_items_returns_current_menu_items(checkout_service, client):
     items = checkout_service.revalidate_items(cart)
 
     assert [(item["id"], item["price"]) for item in items] == [(PIZZA, 18.5), (SALAD, 9.49)]
+
+
+# --- 4.3: authoritative order total ---
+
+
+def test_checkout_returns_the_order_lines_and_totals(client):
+    add_pizza_and_salad(client)
+
+    body = client.post("/checkout", headers=ANA).json()
+
+    assert body == {
+        "restaurant_id": 1,
+        "items": [
+            {"menu_item_id": PIZZA, "name": "Pepperoni Pizza", "unit_price": 16.99, "quantity": 2, "line_total": 33.98},
+            {"menu_item_id": SALAD, "name": "Caesar Salad", "unit_price": 9.49, "quantity": 1, "line_total": 9.49},
+        ],
+        "subtotal": 43.47,
+        "total": 43.47,
+    }
+
+
+def test_order_total_matches_the_cart_total(client):
+    add_pizza_and_salad(client)
+    cart = client.get("/cart", headers=ANA).json()
+
+    order = client.post("/checkout", headers=ANA).json()
+
+    assert (order["subtotal"], order["total"]) == (cart["subtotal"], cart["total"])
+    assert [line["line_total"] for line in order["items"]] == [line["line_total"] for line in cart["items"]]
+
+
+def test_price_changed_between_adding_and_checkout_uses_the_new_price(client):
+    client.post("/cart/items", json={"menu_item_id": PIZZA, "quantity": 3}, headers=ANA)
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 12.5}, headers=MANAGER)
+
+    body = client.post("/checkout", headers=ANA).json()
+
+    assert body["items"][0]["unit_price"] == 12.5
+    assert body["items"][0]["line_total"] == 37.5
+    assert body["total"] == 37.5
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"total": 0.01},
+        {"subtotal": 0, "total": 0},
+        {"items": [{"menu_item_id": PIZZA, "quantity": 1, "unit_price": 0.01, "line_total": 0.01}], "total": 0.01},
+    ],
+)
+def test_any_price_or_total_sent_by_the_client_is_ignored(client, body):
+    client.post("/cart/items", json={"menu_item_id": PIZZA, "quantity": 2}, headers=ANA)
+
+    response = client.post("/checkout", json=body, headers=ANA)
+
+    assert response.json()["items"][0]["unit_price"] == 16.99
+    assert response.json()["total"] == 33.98
+
+
+def test_checkout_uses_the_shared_pricing_function(checkout_service, client, monkeypatch):
+    add_pizza_and_salad(client)
+    calls = []
+    original = checkout_module.price_lines
+
+    def spy(lines):
+        calls.append([(item["id"], quantity) for item, quantity in lines])
+        return original(lines)
+
+    monkeypatch.setattr(checkout_module, "price_lines", spy)
+
+    checkout_service.checkout(ANA_ID)
+
+    assert calls == [[(PIZZA, 2), (SALAD, 1)]]
+
+
+def test_service_calculate_totals_uses_the_menu_items_given(checkout_service):
+    cart = cart_record(items=[{"menu_item_id": PIZZA, "quantity": 2, "price": 0.01}])
+    menu_items = [{"id": PIZZA, "name": "Pepperoni Pizza", "price": 20}]
+
+    totals = checkout_service.calculate_totals(cart, menu_items)
+
+    assert totals["items"][0]["line_total"] == 40.0
+    assert totals["total"] == 40.0
