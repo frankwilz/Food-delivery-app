@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import dependencies
+from app.api.routes import cart as cart_route
 from app.api.routes import customers as customers_route
 from app.api.routes import menu as menu_route
 from app.api.routes import restaurants as restaurants_route
@@ -25,6 +26,10 @@ def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setattr(customers_route, "CUSTOMERS_FILE", tmp_path / "customers.json")
     # Login and get_current_customer read the customers file through the shared dependencies
     monkeypatch.setattr(dependencies, "CUSTOMERS_FILE", tmp_path / "customers.json")
+    # The cart route builds the cart's services, so patch its data files there
+    shutil.copy(REAL_DATA / "carts.json", tmp_path / "carts.json")
+    monkeypatch.setattr(cart_route, "CARTS_FILE", tmp_path / "carts.json")
+    monkeypatch.setattr(cart_route, "CUSTOMERS_FILE", tmp_path / "customers.json")
 
 
 @pytest.fixture
