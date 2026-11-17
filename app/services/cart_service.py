@@ -1,5 +1,23 @@
+from app.core.errors import BadRequestError, ConflictError
 from app.repositories.cart_repository import CartRepository
+from app.schemas.cart import MAX_QUANTITY, CartItemAdd
 from app.services.customer_service import CustomerService
+from app.services.menu_service import MenuService
+
+
+class DifferentRestaurantError(ConflictError):
+    def __init__(self, item: dict, cart_restaurant_id: int):
+        super().__init__(
+            f"Menu item {item['id']} ({item['name']}) is from restaurant {item['restaurant_id']}, but the cart "
+            f"has items from restaurant {cart_restaurant_id}. Clear the cart to order from another restaurant."
+        )
+
+
+class QuantityLimitError(BadRequestError):
+    def __init__(self, menu_item_id: int, quantity: int):
+        super().__init__(
+            f"The cart would hold {quantity} of menu item {menu_item_id}; the most allowed is {MAX_QUANTITY}"
+        )
 
 
 class CartService:
@@ -9,8 +27,14 @@ class CartService:
     (`CustomerService.get_active_customer`), so a deactivated customer gets a 403.
     """
 
-    def __init__(self, cart_repository: CartRepository, customer_service: CustomerService):
+    def __init__(
+        self,
+        cart_repository: CartRepository,
+        menu_service: MenuService,
+        customer_service: CustomerService,
+    ):
         self.cart_repository = cart_repository
+        self.menu_service = menu_service
         self.customer_service = customer_service
 
     # --- 3.2 Create/retrieve the active cart ---
@@ -28,3 +52,25 @@ class CartService:
 
     def get_cart(self, customer_id: int) -> dict:
         return self.get_or_create_active_cart(customer_id)
+
+    # --- 3.3 Add items ---
+
+    def add_item(self, customer_id: int, data: CartItemAdd) -> dict:
+        cart = self.get_or_create_active_cart(customer_id)
+        # 404 if the item does not exist, 409 if it is deactivated or unavailable
+        item = self.menu_service.get_orderable_item(data.menu_item_id)
+        if cart["items"] and cart["restaurant_id"] != item["restaurant_id"]:
+            raise DifferentRestaurantError(item, cart["restaurant_id"])
+
+        items = [dict(line) for line in cart["items"]]
+        existing = next((line for line in items if line["menu_item_id"] == item["id"]), None)
+        if existing is None:
+            items.append({"menu_item_id": item["id"], "quantity": data.quantity})
+        else:
+            new_quantity = existing["quantity"] + data.quantity
+            if new_quantity > MAX_QUANTITY:
+                raise QuantityLimitError(item["id"], new_quantity)
+            existing["quantity"] = new_quantity
+
+        # The first item decides which restaurant the cart belongs to
+        return self.cart_repository.update(cart["id"], {"items": items, "restaurant_id": item["restaurant_id"]})
