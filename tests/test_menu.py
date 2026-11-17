@@ -14,6 +14,14 @@ from app.services.menu_service import (
     MenuService,
 )
 
+
+@pytest.fixture
+def client(manager_client):
+    # Creating and editing restaurants and menus requires a manager (2.5), so these tests sign in as
+    # one. Reads are public; tests/test_authorization.py checks the 401 and 403 cases.
+    return manager_client
+
+
 VALID_ITEM = {
     "name": "Garlic Bread",
     "description": "Toasted with garlic butter",

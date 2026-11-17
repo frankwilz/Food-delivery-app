@@ -27,6 +27,7 @@ def auth(customer_id: int) -> dict:
 
 
 ANA, BEN, CHLOE = auth(ANA_ID), auth(BEN_ID), auth(CHLOE_DEACTIVATED_ID)
+MANAGER = auth(4)  # restaurant and menu changes need a manager (2.5)
 
 
 def stored_carts(tmp_path) -> list[dict]:
@@ -188,7 +189,7 @@ def test_unavailable_item_returns_409(client):
 
 
 def test_deactivated_item_returns_409(client):
-    client.delete(f"/restaurants/1/menu/{SALAD}")
+    client.delete(f"/restaurants/1/menu/{SALAD}", headers=MANAGER)
 
     response = add(client, SALAD)
 
@@ -441,7 +442,7 @@ def test_every_cart_response_is_priced(client):
 def test_price_change_is_reflected_in_the_next_cart_response(client):
     add(client, PIZZA, 2)
 
-    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.5})
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.5}, headers=MANAGER)
 
     body = client.get("/cart", headers=ANA).json()
     assert body["items"][0]["unit_price"] == 18.5
@@ -457,7 +458,7 @@ def test_prices_are_never_stored_in_the_cart(client, tmp_path):
 def test_item_that_became_unavailable_stays_in_the_cart_marked_not_orderable(client):
     add(client, PIZZA)
 
-    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"is_available": False})
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"is_available": False}, headers=MANAGER)
 
     line = client.get("/cart", headers=ANA).json()["items"][0]
     assert line["is_orderable"] is False

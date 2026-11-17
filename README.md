@@ -88,7 +88,7 @@ Then walk through **Restaurant List → Search / Filter → Restaurant Details �
 | Search / filter | Type in the search box (name, cuisine or address), or click a cuisine chip | Filters the loaded list in the browser |
 | Restaurant details | Click a card | `GET /restaurants/{id}` |
 | Menu and menu items | The details page lists the menu, grouped by category, with prices | `GET /restaurants/{id}/menu` |
-| Create a restaurant | Click **Add restaurant**, fill in the form and click **Create restaurant** | `POST /restaurants` |
+| Create a restaurant | Log in as the manager in `/docs` (`POST /auth/login` with `dev.patel@example.com`), paste the `access_token` into **Manager token** at the bottom of the page, then click **Add restaurant**, fill in the form and click **Create restaurant**. Without a manager token the form shows the 401 or 403 error. | `POST /restaurants` |
 | Unknown restaurant | Go to `http://127.0.0.1:5500/#/restaurant/999` | `GET /restaurants/999` → 404, shown as "That restaurant doesn't exist" |
 | Validation error | Create a restaurant with the same name and address as an existing one | `POST /restaurants` → 409, shown in the form |
 
@@ -101,13 +101,13 @@ After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with
 | `GET` | `/health` | Confirms that the API is running. |
 | `GET` | `/restaurants` | Lists restaurants. Optional filters: `search`, `cuisine`, `is_open`, `min_rating` (422 for invalid values). |
 | `GET` | `/restaurants/{restaurant_id}` | Returns one restaurant's details (404 if it does not exist). |
-| `POST` | `/restaurants` | Creates a restaurant; the server assigns the id (201; 409 duplicate name + address; 422 invalid body). |
-| `PATCH` | `/restaurants/{restaurant_id}` | Partially updates a restaurant (200; 400 empty body; 404; 409 duplicate; 422). |
+| `POST` | `/restaurants` | **Manager only.** Creates a restaurant; the server assigns the id (201; 401; 403 not a manager; 409 duplicate name + address; 422 invalid body). |
+| `PATCH` | `/restaurants/{restaurant_id}` | **Manager only.** Partially updates a restaurant (200; 400 empty body; 401; 403; 404; 409 duplicate; 422). |
 | `GET` | `/restaurants/{restaurant_id}/menu` | Returns a restaurant's menu items. Deactivated items are hidden unless `include_inactive=true` is sent (404 if the restaurant does not exist). |
 | `GET` | `/restaurants/{restaurant_id}/menu/{item_id}` | Returns one menu item (404 if missing or owned by another restaurant). |
-| `POST` | `/restaurants/{restaurant_id}/menu` | Adds a menu item; the server assigns the id (201; 404; 409 duplicate name; 422 invalid body). |
-| `PATCH` | `/restaurants/{restaurant_id}/menu/{item_id}` | Partially updates a menu item, including `is_available` and `is_active` (200; 400 empty body; 404; 409 duplicate name; 422). |
-| `DELETE` | `/restaurants/{restaurant_id}/menu/{item_id}` | Deactivates a menu item (soft delete: sets `is_active` to `false` and keeps the record) and returns it (200; 404). |
+| `POST` | `/restaurants/{restaurant_id}/menu` | **Manager only.** Adds a menu item; the server assigns the id (201; 401; 403; 404; 409 duplicate name; 422 invalid body). |
+| `PATCH` | `/restaurants/{restaurant_id}/menu/{item_id}` | **Manager only.** Partially updates a menu item, including `is_available` and `is_active` (200; 400 empty body; 401; 403; 404; 409 duplicate name; 422). |
+| `DELETE` | `/restaurants/{restaurant_id}/menu/{item_id}` | **Manager only.** Deactivates a menu item (soft delete: sets `is_active` to `false` and keeps the record) and returns it (200; 401; 403; 404). |
 | `POST` | `/customers` | Registers a customer account; the server assigns the id, sets `role` to `customer` and stores only a salted password hash (201; 409 duplicate email, case-insensitive; 422 invalid body). |
 | `GET` | `/customers/me` | Returns the signed-in customer (200; 401 missing, invalid or expired token; 403 deactivated). Requires `Authorization: Bearer <token>`. |
 | `PATCH` | `/customers/me` | Changes the signed-in customer's `name`, `email` and/or `delivery_address` (200; 400 empty body; 401; 403 deactivated; 409 duplicate email, case-insensitive; 422 invalid value, `null`, or a field that can't be changed here such as `id`, `role`, `is_active` or `password`). |
@@ -134,10 +134,13 @@ Example restaurant requests:
 curl http://127.0.0.1:8000/restaurants
 curl "http://127.0.0.1:8000/restaurants?search=pizza&min_rating=4"
 curl http://127.0.0.1:8000/restaurants/2
+# Creating and updating need a manager's token (log in as dev.patel@example.com, see Authentication)
 curl -X POST http://127.0.0.1:8000/restaurants \
+  -H "Authorization: Bearer <manager token>" \
   -H "Content-Type: application/json" \
   -d '{"name": "Kelowna Curry House", "cuisine": "Indian", "address": "55 Pandosy Street", "rating": 4.4}'
 curl -X PATCH http://127.0.0.1:8000/restaurants/2 \
+  -H "Authorization: Bearer <manager token>" \
   -H "Content-Type: application/json" \
   -d '{"is_open": false}'
 ```
@@ -200,10 +203,11 @@ GET/POST/PATCH/DELETE /restaurants/{restaurant_id}/menu[/{item_id}]
 - **One rule for ordering:** `MenuService.get_orderable_item(item_id)` returns the item only if it exists, is active and is available. Otherwise it raises a clear error: not found (404), or `MenuItemDeactivatedError` / `MenuItemUnavailableError` (both 409, both subclasses of `MenuItemNotOrderableError`). The cart and checkout call this method instead of checking the flags themselves.
 - **Repository:** the only code that reads or writes `data/menu_items.json`. New ids are `max(existing ids) + 1`, and `id`/`restaurant_id` are never overwritten. Each save writes a temporary file and swaps it in with `os.replace`, so a crash cannot leave a half-written file.
 
-Example: add a menu item.
+Example: add a menu item (managers only).
 
 ```bash
 curl -X POST http://127.0.0.1:8000/restaurants/1/menu \
+  -H "Authorization: Bearer <manager token>" \
   -H "Content-Type: application/json" \
   -d '{"name": "Garlic Bread", "price": 5.99, "category": "Appetizers"}'
 ```
@@ -251,6 +255,18 @@ POST /auth/login
 - **Deactivation:** `POST /customers/me/deactivate` sets `is_active` to `false` and keeps the record. After that, login returns `403`, but only when the password is correct, so a wrong password never reveals an account's status. Because the customer record is read on every request, tokens issued before deactivation stop working immediately with `403`, even though they have not expired.
 - **Wrong email or wrong password:** both return the same `401` and message, so the response does not reveal which emails have accounts.
 
+### Authorization (who may call what)
+
+| Endpoints | Who | Without a valid token | Wrong account |
+| --- | --- | --- | --- |
+| `GET /health`, `GET /restaurants...`, `GET .../menu...`, `POST /customers`, `POST /auth/login` | Anyone | — | — |
+| `POST`/`PATCH /restaurants...`, `POST`/`PATCH`/`DELETE .../menu...` | A signed-in, active **manager** | `401` | `403` for a customer or a deactivated account |
+| `/customers/me...`, `/cart...`, `/checkout` | A signed-in, active account, acting on **its own** data only | `401` | `403` if deactivated |
+
+- **Where it is enforced:** in FastAPI dependencies in `app/api/dependencies.py`. `get_current_customer` checks the token and that the account is active. `require_role("manager")` builds on it and also checks the role; manager-only routes declare `dependencies=[Depends(require_manager)]`. Both run before the route body, so a refused request never reaches a service and writes nothing.
+- **Own data only:** customer endpoints never take a customer id from the client. The id always comes from the token (`customer["id"]`), and services look up only that customer's records, so there is no way to name another customer's cart or account.
+- **Demo:** log in as `dev.patel@example.com` (password in [Representative Data](#representative-data)) to get a manager token for the restaurant and menu forms in `/docs`.
+
 ## Error Handling
 
 Every error response is JSON with the shared `ErrorResponse` shape, `{"detail": "..."}`, and every error status is listed in `/docs`.
@@ -259,7 +275,7 @@ Every error response is JSON with the shared `ErrorResponse` shape, `{"detail": 
 | --- | --- |
 | `400` | A `PATCH` body contains no fields. |
 | `401` | The login email or password is wrong, or a protected endpoint was called with a missing, invalid or expired token. The response includes a `WWW-Authenticate: Bearer` header. |
-| `403` | The customer account has been deactivated: at login (with the correct password) and on every protected endpoint, including with a token issued before deactivation. |
+| `403` | The account has been deactivated (at login with the correct password, and on every protected endpoint, including with a token issued before deactivation), or a customer called a manager-only endpoint. |
 | `404` | The restaurant or menu item does not exist, or the menu item belongs to another restaurant. |
 | `409` | A create or update would duplicate a restaurant (name + address), a menu item name at the same restaurant, or a customer email (case-insensitive). |
 | `422` | Invalid input: a wrong type, a value out of range, a missing required field, an unknown or server-assigned field (`id`, `restaurant_id`), `null` in a `PATCH`, or malformed JSON. For `422` responses, `detail` is FastAPI's list of validation errors. |

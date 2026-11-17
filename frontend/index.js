@@ -4,8 +4,16 @@ const state = { restaurants: null, cuisine: "All", query: "" };
 
 const api = (path) => $("apiBase").value.replace(/\/$/, "") + path;
 
+// Adding or editing restaurants needs a manager's token (POST /auth/login as a manager).
+// Until the sign-in page exists (5.4), it can be pasted into the footer field.
+function withToken(options = {}) {
+  const token = $("managerToken").value.trim();
+  if (!token) return options;
+  return { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + token } };
+}
+
 async function request(path, options) {
-  const res = await fetch(api(path), options);
+  const res = await fetch(api(path), withToken(options));
   if (!res.ok) {
     let detail = res.statusText;
     try {
