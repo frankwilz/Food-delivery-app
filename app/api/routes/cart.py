@@ -20,6 +20,7 @@ NOT_IN_CART = {404: {"model": ErrorResponse, "description": "The menu item is no
 SIGNED_IN = {**NOT_SIGNED_IN, **DEACTIVATED}
 
 
+# The checkout route builds its services from these too, so tests only patch the file paths here
 def build_customer_service() -> CustomerService:
     return CustomerService(CustomerRepository(CUSTOMERS_FILE))
 
@@ -30,6 +31,10 @@ def build_menu_service() -> MenuService:
 
 def build_cart_repository() -> CartRepository:
     return CartRepository(CARTS_FILE)
+
+
+def build_restaurant_repository() -> RestaurantRepository:
+    return RestaurantRepository(RESTAURANTS_FILE)
 
 
 def get_cart_service() -> CartService:
