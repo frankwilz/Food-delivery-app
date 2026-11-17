@@ -26,7 +26,7 @@ def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setattr(customers_route, "CUSTOMERS_FILE", tmp_path / "customers.json")
     # Login and get_current_customer read the customers file through the shared dependencies
     monkeypatch.setattr(dependencies, "CUSTOMERS_FILE", tmp_path / "customers.json")
-    # The cart route builds every service the cart needs, so patch all four files there
+    # The cart route builds every service the cart and checkout need, so patch all four files there
     shutil.copy(REAL_DATA / "carts.json", tmp_path / "carts.json")
     monkeypatch.setattr(cart_route, "CARTS_FILE", tmp_path / "carts.json")
     monkeypatch.setattr(cart_route, "CUSTOMERS_FILE", tmp_path / "customers.json")
