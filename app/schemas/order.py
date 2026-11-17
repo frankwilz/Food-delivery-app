@@ -20,6 +20,7 @@ class Order(BaseModel):
 
     id: int = Field(description="Stable, server-assigned identifier.")
     customer_id: int
+    cart_id: int = Field(description="The cart this order was placed from. Each cart becomes at most one order.")
     restaurant_id: int
     items: list[OrderItem]
     subtotal: float = Field(description="Sum of the line totals.")

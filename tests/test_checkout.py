@@ -1,13 +1,15 @@
 """Tests for checkout: 4.1 (#43) validate the cart, 4.2 (#44) revalidate the menu, 4.3 (#45) order total,
-4.4 (#46) create and persist the order."""
+4.4 (#46) create and persist the order, 4.5 (#47) close the cart after checkout."""
 
 import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.core.errors import ForbiddenError, RestaurantNotFoundError
 from app.core.security import create_access_token
+from app.main import app
 from app.repositories.cart_repository import CartRepository
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.menu_item_repository import MenuItemRepository
@@ -429,6 +431,7 @@ def test_checkout_returns_201_with_the_saved_order(client, tmp_path):
     assert order == {
         "id": 1,
         "customer_id": ANA_ID,
+        "cart_id": 1,
         "restaurant_id": 1,
         "items": [
             {"menu_item_id": PIZZA, "name": "Pepperoni Pizza", "unit_price": 16.99, "quantity": 2, "line_total": 33.98},
@@ -524,3 +527,154 @@ def test_checkout_201_is_documented(client):
     responses = client.get("/openapi.json").json()["paths"]["/checkout"]["post"]["responses"]
 
     assert "201" in responses
+
+
+# --- 4.5: close the cart only after the order is saved ---
+
+
+def stored_carts(tmp_path) -> list[dict]:
+    return json.loads((tmp_path / "carts.json").read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def server_error_client():
+    # Return the 500 response instead of re-raising the error inside the test
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_checkout_closes_the_cart(client, tmp_path):
+    add_pizza_and_salad(client)
+
+    order = client.post("/checkout", headers=ANA).json()
+
+    cart = stored_carts(tmp_path)[0]
+    assert cart["id"] == order["cart_id"]
+    assert cart["status"] == "checked_out"
+    # The items stay as a record of what was ordered
+    assert [line["menu_item_id"] for line in cart["items"]] == [PIZZA, SALAD]
+
+
+def test_after_checkout_get_cart_returns_a_new_empty_cart(client):
+    add_pizza_and_salad(client)
+    order = client.post("/checkout", headers=ANA).json()
+
+    cart = client.get("/cart", headers=ANA).json()
+
+    assert cart["id"] != order["cart_id"]
+    assert cart["status"] == "active"
+    assert cart["items"] == [] and cart["restaurant_id"] is None and cart["total"] == 0.0
+
+
+def test_new_cart_after_checkout_can_use_another_restaurant(client):
+    add_pizza_and_salad(client)
+    client.post("/checkout", headers=ANA)
+
+    response = client.post("/cart/items", json={"menu_item_id": 4, "quantity": 1}, headers=ANA)
+
+    assert response.status_code == 200
+    assert response.json()["restaurant_id"] == 2
+
+
+def test_checking_out_twice_creates_only_one_order(client, tmp_path):
+    add_pizza_and_salad(client)
+
+    first = client.post("/checkout", headers=ANA)
+    second = client.post("/checkout", headers=ANA)
+
+    assert first.status_code == 201
+    assert second.status_code == 400  # the closed cart is no longer active, so there is nothing to check out
+    assert len(stored_orders(tmp_path)) == 1
+
+
+def test_order_save_failure_leaves_the_cart_unchanged(server_error_client, tmp_path, monkeypatch):
+    add_pizza_and_salad(server_error_client)
+    carts_before = stored_carts(tmp_path)
+
+    def failing_save(self, records):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(OrderRepository, "save", failing_save)
+
+    response = server_error_client.post("/checkout", headers=ANA)
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Data storage error"}
+    assert stored_carts(tmp_path) == carts_before
+    assert stored_orders(tmp_path) == []
+
+
+def test_after_a_failed_save_the_same_cart_can_be_checked_out(server_error_client, tmp_path, monkeypatch):
+    add_pizza_and_salad(server_error_client)
+    original_save = OrderRepository.save
+
+    def failing_save(self, records):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(OrderRepository, "save", failing_save)
+    assert server_error_client.post("/checkout", headers=ANA).status_code == 500
+
+    monkeypatch.setattr(OrderRepository, "save", original_save)
+    assert server_error_client.post("/checkout", headers=ANA).status_code == 201
+    assert len(stored_orders(tmp_path)) == 1
+
+
+def test_cart_is_closed_only_after_the_order_is_saved(checkout_service, client, monkeypatch):
+    add_pizza_and_salad(client)
+    events = []
+    original_create = checkout_service.order_repository.create
+    original_close = checkout_service.cart_service.mark_checked_out
+
+    def create(order):
+        events.append("order saved")
+        return original_create(order)
+
+    def close(cart_id):
+        events.append("cart closed")
+        return original_close(cart_id)
+
+    monkeypatch.setattr(checkout_service.order_repository, "create", create)
+    monkeypatch.setattr(checkout_service.cart_service, "mark_checked_out", close)
+
+    checkout_service.checkout(ANA_ID)
+
+    assert events == ["order saved", "cart closed"]
+
+
+def test_order_saved_but_cart_not_closed_is_not_ordered_twice(checkout_service, client, tmp_path, monkeypatch):
+    add_pizza_and_salad(client)
+
+    def crash(cart_id):
+        raise OSError("crashed before closing the cart")
+
+    # Only this service instance crashes; the API below builds fresh services
+    monkeypatch.setattr(checkout_service.cart_service, "mark_checked_out", crash)
+    with pytest.raises(OSError):
+        checkout_service.checkout(ANA_ID)
+    assert stored_carts(tmp_path)[0]["status"] == "active"
+
+    # Trying again finds the saved order for this cart, closes the cart and refuses a second order
+    response = client.post("/checkout", headers=ANA)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Cart 1 has already been checked out as order 1"
+    assert len(stored_orders(tmp_path)) == 1
+    assert stored_carts(tmp_path)[0]["status"] == "checked_out"
+
+
+def test_service_mark_checked_out(checkout_service, client):
+    add_pizza_and_salad(client)
+
+    cart = checkout_service.cart_service.mark_checked_out(1)
+
+    assert cart["status"] == "checked_out"
+    assert checkout_service.cart_repository.get_active_for_customer(ANA_ID) is None
+    with pytest.raises(Exception):
+        checkout_service.cart_service.mark_checked_out(999)
+
+
+def test_order_repository_get_by_cart_id(tmp_path):
+    repository = OrderRepository(tmp_path / "orders.json")
+    order = repository.create({"customer_id": ANA_ID, "cart_id": 7})
+
+    assert repository.get_by_cart_id(7) == order
+    assert repository.get_by_cart_id(8) is None
