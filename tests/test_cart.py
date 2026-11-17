@@ -14,6 +14,7 @@ from app.schemas.cart import MAX_QUANTITY, CartItemAdd
 from app.services.cart_service import CartService, DifferentRestaurantError, ItemNotInCartError, QuantityLimitError
 from app.services.customer_service import CustomerService
 from app.services.menu_service import MenuItemDeactivatedError, MenuItemUnavailableError, MenuService
+from app.services.pricing import price_lines
 
 # From data/customers.json and data/menu_items.json
 ANA_ID, BEN_ID, CHLOE_DEACTIVATED_ID = 1, 2, 3
@@ -52,7 +53,15 @@ def test_get_cart_creates_an_empty_active_cart(client, tmp_path):
     response = client.get("/cart", headers=ANA)
 
     assert response.status_code == 200
-    assert response.json() == {"id": 1, "customer_id": ANA_ID, "restaurant_id": None, "items": [], "status": "active"}
+    assert response.json() == {
+        "id": 1,
+        "customer_id": ANA_ID,
+        "restaurant_id": None,
+        "status": "active",
+        "items": [],
+        "subtotal": 0.0,
+        "total": 0.0,
+    }
     assert stored_carts(tmp_path) == [
         {"id": 1, "customer_id": ANA_ID, "restaurant_id": None, "items": [], "status": "active"}
     ]
@@ -123,7 +132,7 @@ def test_add_item_returns_the_updated_cart(client, tmp_path):
     assert response.status_code == 200
     body = response.json()
     assert body["restaurant_id"] == 1
-    assert body["items"] == [{"menu_item_id": PIZZA, "quantity": 2}]
+    assert [(line["menu_item_id"], line["quantity"]) for line in body["items"]] == [(PIZZA, 2)]
     assert stored_carts(tmp_path)[0]["items"] == [{"menu_item_id": PIZZA, "quantity": 2}]
 
 
@@ -388,3 +397,86 @@ def test_remove_and_clear_are_documented(client):
 
     assert {"401", "403", "404"} <= set(paths["/cart/items/{menu_item_id}"]["delete"]["responses"])
     assert {"401", "403"} <= set(paths["/cart"]["delete"]["responses"])
+
+
+# --- 3.6 Subtotal and total ---
+
+
+def test_cart_lines_are_priced_from_the_menu(client):
+    body = add(client, PIZZA, 2).json()
+
+    assert body["items"] == [
+        {
+            "menu_item_id": PIZZA,
+            "name": "Pepperoni Pizza",
+            "unit_price": 16.99,
+            "quantity": 2,
+            "line_total": 33.98,
+            "is_orderable": True,
+        }
+    ]
+    assert body["subtotal"] == 33.98
+    assert body["total"] == 33.98
+
+
+def test_totals_for_several_items_and_quantities(client):
+    add(client, PIZZA, 3)  # 3 × 16.99 = 50.97
+    body = add(client, SALAD, 2).json()  # 2 × 9.49 = 18.98
+
+    assert [line["line_total"] for line in body["items"]] == [50.97, 18.98]
+    assert body["subtotal"] == 69.95
+    assert body["total"] == 69.95
+
+
+def test_every_cart_response_is_priced(client):
+    add(client, PIZZA, 1)
+
+    assert client.patch(f"/cart/items/{PIZZA}", json={"quantity": 4}, headers=ANA).json()["total"] == 67.96
+    assert client.get("/cart", headers=ANA).json()["total"] == 67.96
+    add(client, SALAD, 1)
+    assert client.delete(f"/cart/items/{PIZZA}", headers=ANA).json()["total"] == 9.49
+    assert client.delete("/cart", headers=ANA).json()["total"] == 0.0
+
+
+def test_price_change_is_reflected_in_the_next_cart_response(client):
+    add(client, PIZZA, 2)
+
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.5})
+
+    body = client.get("/cart", headers=ANA).json()
+    assert body["items"][0]["unit_price"] == 18.5
+    assert body["total"] == 37.0
+
+
+def test_prices_are_never_stored_in_the_cart(client, tmp_path):
+    add(client, PIZZA, 2)
+
+    assert stored_carts(tmp_path)[0]["items"] == [{"menu_item_id": PIZZA, "quantity": 2}]
+
+
+def test_item_that_became_unavailable_stays_in_the_cart_marked_not_orderable(client):
+    add(client, PIZZA)
+
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"is_available": False})
+
+    line = client.get("/cart", headers=ANA).json()["items"][0]
+    assert line["is_orderable"] is False
+
+
+def test_pricing_avoids_float_errors():
+    # With floats, 0.1 + 0.2 == 0.30000000000000004
+    result = price_lines([({"id": 1, "name": "A", "price": 0.1}, 1), ({"id": 2, "name": "B", "price": 0.2}, 1)])
+
+    assert result["subtotal"] == 0.3
+
+
+def test_pricing_rounds_half_up_to_cents():
+    result = price_lines([({"id": 1, "name": "A", "price": 1.005}, 1), ({"id": 2, "name": "B", "price": 0.125}, 3)])
+
+    assert [line["line_total"] for line in result["items"]] == [1.01, 0.38]
+    assert result["subtotal"] == 1.39
+    assert result["total"] == result["subtotal"]
+
+
+def test_pricing_empty_cart():
+    assert price_lines([]) == {"items": [], "subtotal": 0.0, "total": 0.0}

@@ -88,6 +88,10 @@ class MenuService:
         self.get_menu_item(restaurant_id, item_id)
         return self.menu_repository.update(item_id, {"is_active": False})
 
+    def get_item_by_id(self, item_id: int) -> dict | None:
+        """Return any menu item by id, whatever its restaurant or status, or None. Used to price carts."""
+        return self.menu_repository.get_by_id(item_id)
+
     def get_orderable_item(self, item_id: int) -> dict:
         """Return the item if it can be ordered right now, otherwise raise a clear error.
 

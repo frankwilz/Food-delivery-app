@@ -42,7 +42,8 @@ def get_cart_service() -> CartService:
     summary="Get my cart",
     description=(
         "Returns the signed-in customer's active cart, creating an empty one the first time. A customer "
-        "never has more than one active cart."
+        "never has more than one active cart. Line totals, `subtotal` and `total` are calculated by the "
+        "backend from the **current** menu prices; `total` equals `subtotal` (no delivery fee or tax yet)."
     ),
     responses=SIGNED_IN,
 )

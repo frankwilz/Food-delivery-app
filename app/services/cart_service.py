@@ -2,7 +2,8 @@ from app.core.errors import BadRequestError, ConflictError, NotFoundError
 from app.repositories.cart_repository import CartRepository
 from app.schemas.cart import MAX_QUANTITY, CartItemAdd
 from app.services.customer_service import CustomerService
-from app.services.menu_service import MenuService
+from app.services.menu_service import MenuItemNotOrderableError, MenuService
+from app.services.pricing import price_lines
 
 
 class DifferentRestaurantError(ConflictError):
@@ -56,7 +57,7 @@ class CartService:
         return cart
 
     def get_cart(self, customer_id: int) -> dict:
-        return self.get_or_create_active_cart(customer_id)
+        return self.priced(self.get_or_create_active_cart(customer_id))
 
     # --- 3.3 Add items ---
 
@@ -78,7 +79,8 @@ class CartService:
             existing["quantity"] = new_quantity
 
         # The first item decides which restaurant the cart belongs to
-        return self.cart_repository.update(cart["id"], {"items": items, "restaurant_id": item["restaurant_id"]})
+        cart = self.cart_repository.update(cart["id"], {"items": items, "restaurant_id": item["restaurant_id"]})
+        return self.priced(cart)
 
     # --- 3.4 Update quantities ---
 
@@ -89,7 +91,7 @@ class CartService:
         if line is None:
             raise ItemNotInCartError(menu_item_id)
         line["quantity"] = quantity
-        return self.cart_repository.update(cart["id"], {"items": items})
+        return self.priced(self.cart_repository.update(cart["id"], {"items": items}))
 
     # --- 3.5 Remove items and clear ---
 
@@ -102,11 +104,11 @@ class CartService:
         if not items:
             # An empty cart is no longer tied to a restaurant
             changes["restaurant_id"] = None
-        return self.cart_repository.update(cart["id"], changes)
+        return self.priced(self.cart_repository.update(cart["id"], changes))
 
     def clear_for_customer(self, customer_id: int) -> dict:
         cart = self.get_or_create_active_cart(customer_id)
-        return self.clear(cart["id"])
+        return self.priced(self.clear(cart["id"]))
 
     def clear(self, cart_id: int) -> dict:
         """Empty a cart and untie it from its restaurant. Checkout calls this after saving an order (4.5)."""
@@ -114,3 +116,35 @@ class CartService:
         if cart is None:
             raise NotFoundError(f"Cart {cart_id} not found")
         return cart
+
+    # --- 3.6 Subtotal and total ---
+
+    def priced(self, cart: dict) -> dict:
+        """Return the cart with line totals, subtotal and total from the **current** menu prices."""
+        menu_items = []
+        orderable = []
+        for line in cart["items"]:
+            item = self.menu_service.get_item_by_id(line["menu_item_id"])
+            if item is None:
+                # Menu items are only ever soft-deleted, so this only happens if the data was edited by hand
+                item = {"id": line["menu_item_id"], "name": f"Menu item {line['menu_item_id']}", "price": 0}
+            menu_items.append((item, line["quantity"]))
+            orderable.append(self._is_orderable(item["id"]))
+
+        pricing = price_lines(menu_items)
+        for line, is_orderable in zip(pricing["items"], orderable):
+            line["is_orderable"] = is_orderable
+        return {
+            "id": cart["id"],
+            "customer_id": cart["customer_id"],
+            "restaurant_id": cart["restaurant_id"],
+            "status": cart["status"],
+            **pricing,
+        }
+
+    def _is_orderable(self, menu_item_id: int) -> bool:
+        try:
+            self.menu_service.get_orderable_item(menu_item_id)
+        except (MenuItemNotOrderableError, NotFoundError):
+            return False
+        return True
