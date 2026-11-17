@@ -28,12 +28,14 @@ def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setattr(customers_route, "CUSTOMERS_FILE", tmp_path / "customers.json")
     # Login and get_current_customer read the customers file through the shared dependencies
     monkeypatch.setattr(dependencies, "CUSTOMERS_FILE", tmp_path / "customers.json")
-    # The cart route builds every service the cart and checkout need, so patch all four files there
+    # The cart route builds every service the cart and checkout need, so patch all five files there
     shutil.copy(REAL_DATA / "carts.json", tmp_path / "carts.json")
     monkeypatch.setattr(cart_route, "CARTS_FILE", tmp_path / "carts.json")
     monkeypatch.setattr(cart_route, "CUSTOMERS_FILE", tmp_path / "customers.json")
     monkeypatch.setattr(cart_route, "MENU_ITEMS_FILE", tmp_path / "menu_items.json")
     monkeypatch.setattr(cart_route, "RESTAURANTS_FILE", tmp_path / "restaurants.json")
+    shutil.copy(REAL_DATA / "orders.json", tmp_path / "orders.json")
+    monkeypatch.setattr(cart_route, "ORDERS_FILE", tmp_path / "orders.json")
 
 
 @pytest.fixture

@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends
 
 from app.api.dependencies import get_current_customer
-from app.core.config import CARTS_FILE, CUSTOMERS_FILE, MENU_ITEMS_FILE, RESTAURANTS_FILE
+from app.core.config import CARTS_FILE, CUSTOMERS_FILE, MENU_ITEMS_FILE, ORDERS_FILE, RESTAURANTS_FILE
 from app.repositories.cart_repository import CartRepository
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.menu_item_repository import MenuItemRepository
+from app.repositories.order_repository import OrderRepository
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.cart import CartItemAdd, CartItemUpdate, CartResponse
 from app.schemas.error import ErrorResponse
@@ -35,6 +36,10 @@ def build_cart_repository() -> CartRepository:
 
 def build_restaurant_repository() -> RestaurantRepository:
     return RestaurantRepository(RESTAURANTS_FILE)
+
+
+def build_order_repository() -> OrderRepository:
+    return OrderRepository(ORDERS_FILE)
 
 
 def get_cart_service() -> CartService:
