@@ -302,3 +302,89 @@ def test_update_is_documented(client):
     responses = client.get("/openapi.json").json()["paths"]["/cart/items/{menu_item_id}"]["patch"]["responses"]
 
     assert {"401", "403", "404", "422"} <= set(responses)
+
+
+# --- 3.5 DELETE /cart/items/{menu_item_id} and DELETE /cart ---
+
+
+def test_remove_one_item(client):
+    add(client, PIZZA)
+    add(client, SALAD)
+
+    response = client.delete(f"/cart/items/{PIZZA}", headers=ANA)
+
+    assert response.status_code == 200
+    assert [line["menu_item_id"] for line in response.json()["items"]] == [SALAD]
+    assert response.json()["restaurant_id"] == 1
+
+
+def test_remove_item_not_in_cart_returns_404(client):
+    response = client.delete(f"/cart/items/{PIZZA}", headers=ANA)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"Menu item {PIZZA} is not in the cart"
+
+
+def test_removing_the_last_item_resets_the_restaurant(client, tmp_path):
+    add(client, PIZZA)
+
+    body = client.delete(f"/cart/items/{PIZZA}", headers=ANA).json()
+
+    assert body["items"] == []
+    assert body["restaurant_id"] is None
+    assert stored_carts(tmp_path)[0]["restaurant_id"] is None
+    # So an item from another restaurant can now be added
+    assert add(client, CRUNCHWRAP).status_code == 200
+
+
+def test_clear_cart_empties_it_and_resets_the_restaurant(client, tmp_path):
+    add(client, PIZZA, 2)
+    add(client, SALAD)
+
+    response = client.delete("/cart", headers=ANA)
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert response.json()["restaurant_id"] is None
+    cart = stored_carts(tmp_path)[0]
+    assert cart["items"] == [] and cart["restaurant_id"] is None and cart["status"] == "active"
+    assert add(client, CRUNCHWRAP).status_code == 200
+
+
+def test_clearing_an_empty_cart_succeeds(client):
+    assert client.delete("/cart", headers=ANA).status_code == 200
+
+
+@pytest.mark.parametrize("path", [f"/cart/items/{PIZZA}", "/cart"])
+def test_remove_and_clear_require_sign_in(client, path):
+    assert client.delete(path).status_code == 401
+
+
+@pytest.mark.parametrize("path", [f"/cart/items/{PIZZA}", "/cart"])
+def test_deactivated_customer_cannot_remove_or_clear(client, path):
+    assert client.delete(path, headers=CHLOE).status_code == 403
+
+
+def test_service_clear_by_cart_id(service):
+    cart = service.add_item(ANA_ID, CartItemAdd(menu_item_id=PIZZA, quantity=1))
+
+    cleared = service.clear(cart["id"])
+
+    assert cleared["items"] == [] and cleared["restaurant_id"] is None
+
+
+def test_service_clear_unknown_cart(service):
+    with pytest.raises(NotFoundError):
+        service.clear(999)
+
+
+def test_service_remove_item_not_in_cart(service):
+    with pytest.raises(ItemNotInCartError):
+        service.remove_item(ANA_ID, PIZZA)
+
+
+def test_remove_and_clear_are_documented(client):
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert {"401", "403", "404"} <= set(paths["/cart/items/{menu_item_id}"]["delete"]["responses"])
+    assert {"401", "403"} <= set(paths["/cart"]["delete"]["responses"])

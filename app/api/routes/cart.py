@@ -91,3 +91,32 @@ def update_cart_item(
     service: CartService = Depends(get_cart_service),
 ):
     return service.update_quantity(customer["id"], menu_item_id, body.quantity)
+
+
+@router.delete(
+    "/cart/items/{menu_item_id}",
+    response_model=CartResponse,
+    summary="Remove an item from my cart",
+    description=(
+        "Removes one item from the cart. When the last item is removed the cart is no longer tied to a "
+        "restaurant. Returns the updated cart."
+    ),
+    responses={**SIGNED_IN, **NOT_IN_CART},
+)
+def remove_cart_item(
+    menu_item_id: int,
+    customer: dict = Depends(get_current_customer),
+    service: CartService = Depends(get_cart_service),
+):
+    return service.remove_item(customer["id"], menu_item_id)
+
+
+@router.delete(
+    "/cart",
+    response_model=CartResponse,
+    summary="Empty my cart",
+    description="Removes every item from the cart and unties it from its restaurant. Returns the empty cart.",
+    responses=SIGNED_IN,
+)
+def clear_cart(customer: dict = Depends(get_current_customer), service: CartService = Depends(get_cart_service)):
+    return service.clear_for_customer(customer["id"])
