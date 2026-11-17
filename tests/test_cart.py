@@ -22,6 +22,10 @@ PIZZA, SALAD, WINGS_UNAVAILABLE = 1, 2, 3  # restaurant 1: 16.99, 9.49, unavaila
 CRUNCHWRAP = 4  # restaurant 2: 6.49
 
 
+# These tests count and number carts and orders from 1, so they start with none (see conftest.py)
+pytestmark = pytest.mark.usefixtures("no_carts_or_orders")
+
+
 def auth(customer_id: int) -> dict:
     return {"Authorization": f"Bearer {create_access_token(customer_id)}"}
 

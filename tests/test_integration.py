@@ -11,7 +11,7 @@ import urllib.request
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes import restaurants as restaurants_route
+from app.core import config
 from app.core.config import BASE_DIR
 from app.main import app
 
@@ -84,7 +84,7 @@ def test_corrupt_data_file_returns_json_500(server_error_client, tmp_path):
 
 
 def test_missing_data_file_returns_json_500(server_error_client, tmp_path, monkeypatch):
-    monkeypatch.setattr(restaurants_route, "RESTAURANTS_FILE", tmp_path / "missing.json")
+    monkeypatch.setattr(config, "RESTAURANTS_FILE", tmp_path / "missing.json")
 
     response = server_error_client.get("/restaurants/1")
 
@@ -186,12 +186,20 @@ def _stop_server(process: subprocess.Popen) -> None:
     process.wait(timeout=10)
 
 
-def test_data_persists_after_server_restart(tmp_path):
+DATA_FILE_NAMES = ("restaurants.json", "menu_items.json", "customers.json", "carts.json", "orders.json")
+
+
+def _copy_data(tmp_path):
+    """A temporary copy of all five data files, for a server started with DATA_DIR."""
     data_dir = tmp_path / "server-data"
     data_dir.mkdir()
-    shutil.copy(BASE_DIR / "data" / "restaurants.json", data_dir / "restaurants.json")
-    shutil.copy(BASE_DIR / "data" / "menu_items.json", data_dir / "menu_items.json")
-    shutil.copy(BASE_DIR / "data" / "customers.json", data_dir / "customers.json")
+    for file_name in DATA_FILE_NAMES:
+        shutil.copy(BASE_DIR / "data" / file_name, data_dir / file_name)
+    return data_dir
+
+
+def test_data_persists_after_server_restart(tmp_path):
+    data_dir = _copy_data(tmp_path)
     committed = (BASE_DIR / "data" / "restaurants.json").read_text(encoding="utf-8")
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
@@ -231,3 +239,52 @@ def test_data_persists_after_server_restart(tmp_path):
 
     # The committed representative data was never touched
     assert (BASE_DIR / "data" / "restaurants.json").read_text(encoding="utf-8") == committed
+
+
+def test_cart_and_order_persist_after_server_restarts(tmp_path):
+    # 5.2: the customer-to-order workflow keeps every relationship across restarts
+    data_dir = _copy_data(tmp_path)
+    committed = {name: (BASE_DIR / "data" / name).read_text(encoding="utf-8") for name in DATA_FILE_NAMES}
+    port = _free_port()
+    base = f"http://127.0.0.1:{port}"
+    ana = {"email": "ana.souza@example.com", "password": "Ana-demo-2026"}
+
+    # 1. Log in and fill the cart
+    server = _start_server(data_dir, port)
+    try:
+        status, login = _request("POST", f"{base}/auth/login", ana)
+        assert status == 200
+        token = login["access_token"]
+        assert _request("POST", f"{base}/cart/items", {"menu_item_id": 1, "quantity": 2}, token)[0] == 200
+        status, cart = _request("POST", f"{base}/cart/items", {"menu_item_id": 2, "quantity": 1}, token)
+        assert status == 200
+    finally:
+        _stop_server(server)
+
+    # 2. After a restart the cart is still there; check out
+    server = _start_server(data_dir, port)
+    try:
+        assert _request("GET", f"{base}/cart", token=token) == (200, cart)
+        status, order = _request("POST", f"{base}/checkout", token=token)
+        assert status == 201
+        assert order["cart_id"] == cart["id"]
+    finally:
+        _stop_server(server)
+
+    # 3. After another restart the order, its cart link and the new empty cart are all still right
+    server = _start_server(data_dir, port)
+    try:
+        assert _request("GET", f"{base}/orders/{order['id']}", token=token) == (200, order)
+        assert _request("GET", f"{base}/orders", token=token) == (200, [order])
+        status, new_cart = _request("GET", f"{base}/cart", token=token)
+        assert status == 200
+        assert new_cart["id"] != cart["id"] and new_cart["items"] == []
+        # A second checkout of the old cart is impossible: the active cart is the new, empty one
+        assert _request("POST", f"{base}/checkout", token=token)[0] == 400
+    finally:
+        _stop_server(server)
+
+    saved_carts = json.loads((data_dir / "carts.json").read_text(encoding="utf-8"))
+    assert next(c for c in saved_carts if c["id"] == cart["id"])["status"] == "checked_out"
+    # The committed representative data was never touched
+    assert {name: (BASE_DIR / "data" / name).read_text(encoding="utf-8") for name in DATA_FILE_NAMES} == committed

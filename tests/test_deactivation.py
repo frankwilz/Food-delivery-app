@@ -148,7 +148,8 @@ def test_deactivated_customer_cannot_add_to_cart_after_deactivating(client, tmp_
     response = client.post("/cart/items", json={"menu_item_id": 1, "quantity": 1}, headers=bearer(token))
 
     assert response.status_code == 403
-    assert json.loads((tmp_path / "carts.json").read_text(encoding="utf-8")) == []
+    carts = json.loads((tmp_path / "carts.json").read_text(encoding="utf-8"))
+    assert [cart for cart in carts if cart["customer_id"] == ANA_ID] == []
 
 
 def test_deactivation_responses_are_documented(client):

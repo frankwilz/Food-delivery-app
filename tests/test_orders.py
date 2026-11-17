@@ -12,6 +12,10 @@ ANA_ID, BEN_ID, CHLOE_DEACTIVATED_ID = 1, 2, 3
 PIZZA, SALAD, CRUNCHWRAP = 1, 2, 4  # Pizza and salad: restaurant 1. Crunchwrap: restaurant 2.
 
 
+# These tests count and number carts and orders from 1, so they start with none (see conftest.py)
+pytestmark = pytest.mark.usefixtures("no_carts_or_orders")
+
+
 def auth(customer_id: int) -> dict:
     return {"Authorization": f"Bearer {create_access_token(customer_id)}"}
 

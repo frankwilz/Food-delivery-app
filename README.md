@@ -113,6 +113,14 @@ After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with
 | `PATCH` | `/customers/me` | Changes the signed-in customer's `name`, `email` and/or `delivery_address` (200; 400 empty body; 401; 403 deactivated; 409 duplicate email, case-insensitive; 422 invalid value, `null`, or a field that can't be changed here such as `id`, `role`, `is_active` or `password`). |
 | `POST` | `/customers/me/deactivate` | Deactivates the signed-in customer's account and returns it with `is_active: false` (200; 401; 403 already deactivated). The record is kept, so the email stays taken. |
 | `POST` | `/auth/login` | Checks an email and password and returns a signed token (200; 401 wrong email or password; 403 deactivated account with the correct password; 422 invalid body). |
+| `GET` | `/cart` | Returns the signed-in customer's active cart, creating an empty one the first time, priced from the current menu (200; 401; 403 deactivated). |
+| `POST` | `/cart/items` | Adds a menu item and quantity to the cart; adding it again increases the quantity (200; 400 total quantity above 99; 401; 403; 404 unknown item; 409 another restaurant, unavailable or removed item; 422 invalid quantity). |
+| `PATCH` | `/cart/items/{menu_item_id}` | Sets an item's quantity (200; 401; 403; 404 not in the cart; 422 invalid quantity). |
+| `DELETE` | `/cart/items/{menu_item_id}` | Removes one item; an emptied cart is no longer tied to a restaurant (200; 401; 403; 404 not in the cart). |
+| `DELETE` | `/cart` | Empties the cart (200; 401; 403). |
+| `POST` | `/checkout` | Places an order from the active cart and returns it (201; 400 empty cart or invalid quantity; 401; 403; 404 restaurant or item gone; 409 restaurant closed, item unavailable or removed, or cart already checked out). |
+| `GET` | `/orders` | Lists the signed-in customer's orders, newest first (200; 401; 403). |
+| `GET` | `/orders/{order_id}` | Returns one of the signed-in customer's orders (200; 401; 403; 404 missing or another customer's). |
 | `GET` | `/docs` | Opens FastAPI's interactive Swagger UI. |
 | `GET` | `/openapi.json` | Returns the generated OpenAPI schema. |
 
@@ -261,11 +269,42 @@ POST /auth/login
 | --- | --- | --- | --- |
 | `GET /health`, `GET /restaurants...`, `GET .../menu...`, `POST /customers`, `POST /auth/login` | Anyone | — | — |
 | `POST`/`PATCH /restaurants...`, `POST`/`PATCH`/`DELETE .../menu...` | A signed-in, active **manager** | `401` | `403` for a customer or a deactivated account |
-| `/customers/me...`, `/cart...`, `/checkout` | A signed-in, active account, acting on **its own** data only | `401` | `403` if deactivated |
+| `/customers/me...`, `/cart...`, `/checkout`, `/orders...` | A signed-in, active account, acting on **its own** data only | `401` | `403` if deactivated |
 
 - **Where it is enforced:** in FastAPI dependencies in `app/api/dependencies.py`. `get_current_customer` checks the token and that the account is active. `require_role("manager")` builds on it and also checks the role; manager-only routes declare `dependencies=[Depends(require_manager)]`. Both run before the route body, so a refused request never reaches a service and writes nothing.
 - **Own data only:** customer endpoints never take a customer id from the client. The id always comes from the token (`customer["id"]`), and services look up only that customer's records, so there is no way to name another customer's cart or account.
 - **Demo:** log in as `dev.patel@example.com` (password in [Representative Data](#representative-data)) to get a manager token for the restaurant and menu forms in `/docs`.
+
+## Customer-to-Order Workflow
+
+The full flow goes through every subsystem: **register → log in → browse → add to cart → check out → view the order**.
+
+```text
+POST /checkout
+  -> FastAPI route in app/api/routes/checkout.py
+  -> CheckoutService in app/services/checkout_service.py
+       CustomerService.get_active_customer   (the customer is active)
+       CartRepository.get_active_for_customer (the cart exists and is not empty)
+       RestaurantRepository.get_by_id         (the restaurant exists and is open)
+       MenuService.get_orderable_item         (every item can still be ordered, at its current price)
+       price_lines                            (the same pricing as the cart)
+       OrderRepository.create                 (the order is saved...)
+       CartService.mark_checked_out           (...and only then is the cart closed)
+  -> data/customers.json, carts.json, restaurants.json, menu_items.json, orders.json
+```
+
+**How services get their dependencies:** every repository and service is built in one place, `app/api/dependencies.py`. Each repository is made from its data file path in a `get_..._repository` function, and each service from the repositories and services it needs in a `get_..._service` function, chained with FastAPI's `Depends`. Routes only ask for a service, for example `service: CheckoutService = Depends(get_checkout_service)`. No route or service opens a data file or builds another subsystem's objects; only repositories read and write JSON. `tests/test_workflow.py` checks this.
+
+**Try it in `/docs`** (on a copy of the data, see [Showcase the vertical slice](#showcase-the-vertical-slice)):
+
+1. `POST /customers` to register, then `POST /auth/login` with the same email and password. Click **Authorize** and paste the `access_token`.
+2. `GET /restaurants` and `GET /restaurants/1/menu` to browse.
+3. `POST /cart/items` with `{"menu_item_id": 1, "quantity": 2}`, then `GET /cart` to see the backend's totals.
+4. `POST /checkout` returns `201` with the order. `GET /cart` now returns a new, empty cart.
+5. `GET /orders` and `GET /orders/{order_id}` show the order.
+6. Stop the server and start it again with the same `DATA_DIR`. The account, the order and the empty cart are all still there.
+
+To skip registering, log in as `ben.carter@example.com`, who already has a cart ready to check out and a past order.
 
 ## Error Handling
 
@@ -289,7 +328,7 @@ The default data directory is `data/` at the repository root. Set the `DATA_DIR`
 DATA_DIR=/absolute/path/to/test-data python -m uvicorn app.main:app --reload
 ```
 
-The configured directory must contain `restaurants.json`, `menu_items.json` and `customers.json`. This setting allows automated tests to use isolated temporary data instead of modifying the committed representative data.
+The configured directory must contain all five data files: `restaurants.json`, `menu_items.json`, `customers.json`, `carts.json` and `orders.json`. This setting allows automated tests to use isolated temporary data instead of modifying the committed representative data.
 
 Login tokens are configured with two more environment variables:
 
@@ -321,6 +360,14 @@ The committed file contains four restaurant records with stable integer identifi
 | `chloe.martin@example.com` | `Chloe-demo-2026` | customer | no |
 | `dev.patel@example.com` | `Dev-demo-2026` | manager | yes |
 
+`data/carts.json` and `data/orders.json` fit the other files:
+
+- **Ben** has an active cart at Taco Bell (restaurant 2) ready to check out, and one past order from Boston Pizza (order 1, from his closed cart 1).
+- **Chloe**, now deactivated, has one past order (order 2). Her account is kept, so the order keeps its owner.
+- **Ana** has no cart and no orders, to show the flow from the start.
+
+Every `customer_id`, `restaurant_id`, `menu_item_id` and `cart_id` points to a real record, each cart holds items from its own restaurant only, and each order's totals add up. `tests/test_workflow.py` checks all of this.
+
 ## Tests
 
 Run the test suite from the repository root:
@@ -336,9 +383,13 @@ python -m pytest -q
 | `tests/test_menu.py` | Menu endpoints, validation, duplicate names, availability, deactivation (soft delete), `get_orderable_item`, the repository, and committed data integrity. |
 | `tests/test_customers.py` | Customer registration, duplicate emails (case-insensitive), validation, password hashing, the repository and service, and committed data integrity. |
 | `tests/test_auth.py` | Login (valid, wrong password, unknown email, invalid body), tokens (expired, tampered, forged, malformed), `get_current_customer` (missing, invalid and expired tokens), and the `SECRET_KEY` setting. |
-| `tests/test_integration.py` | The complete vertical slice (restaurant + menu through every layer to the JSON files), error handling (`404`/`405`/`422`/JSON `500`), API documentation, and **persistence across a real restart**: the test starts `uvicorn` with `DATA_DIR` set to a temporary folder, writes data, stops the server, starts it again and reads the data back. |
+| `tests/test_cart.py` | The cart: one active cart per customer, adding, updating, removing and clearing items, the one-restaurant rule, quantities, and totals from the current menu. |
+| `tests/test_checkout.py` | Checkout: every check before anything is written, revalidating items and prices, the order total, saving the order with snapshots, and closing the cart only after the order is saved. |
+| `tests/test_orders.py` | `GET /orders` (newest first, own orders only) and `GET /orders/{order_id}` (404 for a missing or another customer's order), and snapshots that never change. |
+| `tests/test_workflow.py` | The full customer-to-order flow through the API, the consistency of the representative data in all five files, and that routes and services never touch data files directly. |
+| `tests/test_integration.py` | The complete vertical slice (restaurant + menu through every layer to the JSON files), error handling (`404`/`405`/`422`/JSON `500`), API documentation, and **persistence across a real restart**: the tests start `uvicorn` with `DATA_DIR` set to a temporary folder, write data, stop the server, start it again and read the data back. One of them fills a cart, restarts, checks out, restarts again and checks the order, its cart and the new empty cart. |
 
-**Isolated test data:** `tests/conftest.py` copies `data/restaurants.json`, `data/menu_items.json` and `data/customers.json` into a fresh temporary folder before **every** test and points the routes and shared dependencies at those copies. Tests can create and update freely without changing the committed data or affecting each other. Several tests check that the files in `data/` are unchanged afterwards.
+**Isolated test data:** `tests/conftest.py` copies all five data files into a fresh temporary folder before **every** test and points `app.core.config` at those copies, which every shared dependency reads. The cart, checkout and order tests start with empty `carts.json` and `orders.json` (the `no_carts_or_orders` fixture). Tests can create and update freely without changing the committed data or affecting each other. Several tests check that the files in `data/` are unchanged afterwards.
 
 **Continuous integration:** `.github/workflows/tests.yml` runs `pytest` with GitHub Actions on Python 3.11 and 3.13 for every pull request and every push to `main`. It then checks that `data/` was not modified. A pull request should only be merged when this check is green.
 
@@ -349,37 +400,50 @@ Food-delivery-app/
 ├── .github/workflows/tests.yml     # CI: runs pytest on every push and PR
 ├── app/
 │   ├── api/
-│   │   ├── dependencies.py         # get_current_customer (Bearer token -> customer)
+│   │   ├── dependencies.py         # builds every repository and service; get_current_customer, require_role
 │   │   └── routes/
 │   │       ├── auth.py
+│   │       ├── cart.py
+│   │       ├── checkout.py
 │   │       ├── customers.py
 │   │       ├── menu.py
+│   │       ├── orders.py
 │   │       └── restaurants.py
 │   ├── core/
 │   │   ├── config.py               # DATA_DIR, data file paths, token settings
 │   │   ├── errors.py               # shared domain errors (401, 404, 409, ...)
 │   │   └── security.py             # salted password hashing, login tokens
 │   ├── repositories/
+│   │   ├── cart_repository.py
 │   │   ├── customer_repository.py
 │   │   ├── json_repository.py      # JsonRepository base: load, atomic save, next_id
 │   │   ├── menu_item_repository.py
+│   │   ├── order_repository.py
 │   │   └── restaurant_repository.py
 │   ├── schemas/
 │   │   ├── auth.py
+│   │   ├── cart.py
 │   │   ├── customer.py
 │   │   ├── error.py
 │   │   ├── health.py
 │   │   ├── menu_item.py
+│   │   ├── order.py
 │   │   └── restaurant.py
 │   ├── services/
 │   │   ├── auth_service.py
+│   │   ├── cart_service.py
+│   │   ├── checkout_service.py
 │   │   ├── customer_service.py
 │   │   ├── menu_service.py
+│   │   ├── order_service.py
+│   │   ├── pricing.py              # price_lines: the one place money is calculated
 │   │   └── restaurant_service.py
 │   └── main.py                     # app, /health, error handlers, CORS
 ├── data/
+│   ├── carts.json
 │   ├── customers.json
 │   ├── menu_items.json
+│   ├── orders.json
 │   └── restaurants.json
 ├── docs/
 │   └── PROVENANCE.md
@@ -393,11 +457,18 @@ Food-delivery-app/
 ├── tests/
 │   ├── conftest.py                 # isolated temporary data for every test
 │   ├── test_auth.py
+│   ├── test_authorization.py
+│   ├── test_cart.py
+│   ├── test_checkout.py
+│   ├── test_customer_update.py
 │   ├── test_customers.py
+│   ├── test_deactivation.py
 │   ├── test_health.py
 │   ├── test_integration.py
 │   ├── test_menu.py
-│   └── test_restaurants.py
+│   ├── test_orders.py
+│   ├── test_restaurants.py
+│   └── test_workflow.py
 ├── README.md
 └── requirements.txt
 ```

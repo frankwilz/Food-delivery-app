@@ -158,6 +158,7 @@ def test_customers_me_returns_only_the_callers_account(client):
 
 
 def test_a_customer_cannot_see_or_change_another_customers_cart(client):
+    client.delete("/cart", headers=BEN)  # Ben has a cart in the representative data; start it empty
     client.post("/cart/items", json={"menu_item_id": 1, "quantity": 2}, headers=ANA)
 
     # Ben's requests only ever reach Ben's own cart

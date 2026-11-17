@@ -1,8 +1,6 @@
 from fastapi import APIRouter, Depends, Query, status
 
-from app.api.dependencies import MANAGER_ONLY, require_manager
-from app.core.config import RESTAURANTS_FILE
-from app.repositories.restaurant_repository import RestaurantRepository
+from app.api.dependencies import MANAGER_ONLY, get_restaurant_service, require_manager
 from app.schemas.error import ErrorResponse
 from app.schemas.restaurant import Restaurant, RestaurantCreate, RestaurantUpdate
 from app.services.restaurant_service import RestaurantService
@@ -12,11 +10,6 @@ router = APIRouter()
 NOT_FOUND = {404: {"model": ErrorResponse, "description": "Restaurant not found"}}
 DUPLICATE = {409: {"model": ErrorResponse, "description": "A restaurant with this name already exists at this address"}}
 EMPTY_UPDATE = {400: {"model": ErrorResponse, "description": "The update body contained no fields"}}
-
-
-def get_restaurant_service() -> RestaurantService:
-    repository = RestaurantRepository(RESTAURANTS_FILE)
-    return RestaurantService(repository)
 
 
 @router.get(
