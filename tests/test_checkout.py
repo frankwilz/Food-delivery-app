@@ -1,4 +1,4 @@
-"""Tests for 4.1 (#43): validate the cart before checkout."""
+"""Tests for 4.1 (#43) validate the cart before checkout, and 4.2 (#44) revalidate the menu."""
 
 import json
 
@@ -18,10 +18,10 @@ from app.services.checkout_service import (
     RestaurantClosedError,
 )
 from app.services.customer_service import CustomerService
-from app.services.menu_service import MenuService
+from app.services.menu_service import MenuItemDeactivatedError, MenuItemUnavailableError, MenuService
 
 ANA_ID, CHLOE_DEACTIVATED_ID = 1, 3
-PIZZA, SALAD = 1, 2  # restaurant 1
+PIZZA, SALAD = 1, 2  # restaurant 1, both orderable
 
 
 def auth(customer_id: int) -> dict:
@@ -57,7 +57,7 @@ def checkout_service(tmp_path) -> CheckoutService:
     restaurants = RestaurantRepository(tmp_path / "restaurants.json")
     carts = CartRepository(tmp_path / "carts.json")
     menu = MenuService(MenuItemRepository(tmp_path / "menu_items.json"), restaurants)
-    return CheckoutService(customers, carts, restaurants, CartService(carts, menu, customers))
+    return CheckoutService(customers, carts, restaurants, CartService(carts, menu, customers), menu)
 
 
 # --- success ---
@@ -206,3 +206,115 @@ def test_checkout_responses_are_documented(client):
     responses = client.get("/openapi.json").json()["paths"]["/checkout"]["post"]["responses"]
 
     assert {"400", "401", "403", "404", "409"} <= set(responses)
+
+
+# --- 4.2: revalidate every item against the current menu ---
+
+
+def add_pizza_and_salad(client) -> None:
+    client.post("/cart/items", json={"menu_item_id": PIZZA, "quantity": 2}, headers=ANA)
+    client.post("/cart/items", json={"menu_item_id": SALAD, "quantity": 1}, headers=ANA)
+
+
+def test_item_made_unavailable_after_adding_returns_409_naming_it(client, tmp_path):
+    add_pizza_and_salad(client)
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False})
+    before = data_files(tmp_path)
+
+    response = client.post("/checkout", headers=ANA)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == f"Menu item {SALAD} (Caesar Salad) is currently unavailable"
+    assert data_files(tmp_path) == before
+
+
+def test_item_deactivated_after_adding_returns_409_naming_it(client, tmp_path):
+    add_pizza_and_salad(client)
+    client.delete(f"/restaurants/1/menu/{PIZZA}")
+    before = data_files(tmp_path)
+
+    response = client.post("/checkout", headers=ANA)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == f"Menu item {PIZZA} (Pepperoni Pizza) is no longer on the menu"
+    assert data_files(tmp_path) == before
+
+
+def test_item_available_again_can_be_checked_out(client):
+    add_pizza_and_salad(client)
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False})
+    assert client.post("/checkout", headers=ANA).status_code == 409
+
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": True})
+
+    assert client.post("/checkout", headers=ANA).status_code == 200
+
+
+def test_item_missing_from_the_menu_file_returns_404(client, tmp_path):
+    write_carts(tmp_path, [cart_record(items=[{"menu_item_id": 999, "quantity": 1}])])
+    before = data_files(tmp_path)
+
+    response = client.post("/checkout", headers=ANA)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Menu item 999 not found"
+    assert data_files(tmp_path) == before
+
+
+def test_price_change_after_adding_is_used_at_checkout(client):
+    add_pizza_and_salad(client)
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.5})
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"price": 10})
+
+    body = client.post("/checkout", headers=ANA).json()
+
+    assert [(line["menu_item_id"], line["unit_price"], line["line_total"]) for line in body["items"]] == [
+        (PIZZA, 18.5, 37.0),
+        (SALAD, 10.0, 10.0),
+    ]
+    assert body["total"] == 47.0
+
+
+def test_a_price_written_into_the_cart_file_is_ignored(client, tmp_path):
+    # Even if a price ends up in the stored cart, checkout reads it from the menu
+    write_carts(tmp_path, [cart_record(items=[{"menu_item_id": PIZZA, "quantity": 1, "price": 0.01}])])
+
+    assert client.post("/checkout", headers=ANA).json()["total"] == 16.99
+
+
+def test_service_revalidation_errors(checkout_service, client):
+    add_pizza_and_salad(client)
+
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False})
+    with pytest.raises(MenuItemUnavailableError):
+        checkout_service.validate_cart(ANA_ID)
+
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": True, "is_active": False})
+    with pytest.raises(MenuItemDeactivatedError):
+        checkout_service.validate_cart(ANA_ID)
+
+
+def test_revalidation_uses_the_shared_orderable_item_rule(checkout_service, client, monkeypatch):
+    add_pizza_and_salad(client)
+    checked = []
+    original = checkout_service.menu_service.get_orderable_item
+
+    def spy(item_id):
+        checked.append(item_id)
+        return original(item_id)
+
+    monkeypatch.setattr(checkout_service.menu_service, "get_orderable_item", spy)
+
+    checkout_service.validate_cart(ANA_ID)
+
+    assert checked == [PIZZA, SALAD]
+
+
+def test_revalidate_items_returns_current_menu_items(checkout_service, client):
+    add_pizza_and_salad(client)
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.5})
+    cart = checkout_service.cart_repository.get_active_for_customer(ANA_ID)
+
+    items = checkout_service.revalidate_items(cart)
+
+    assert [(item["id"], item["price"]) for item in items] == [(PIZZA, 18.5), (SALAD, 9.49)]
