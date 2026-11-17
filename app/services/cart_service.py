@@ -1,4 +1,4 @@
-from app.core.errors import BadRequestError, ConflictError
+from app.core.errors import BadRequestError, ConflictError, NotFoundError
 from app.repositories.cart_repository import CartRepository
 from app.schemas.cart import MAX_QUANTITY, CartItemAdd
 from app.services.customer_service import CustomerService
@@ -11,6 +11,11 @@ class DifferentRestaurantError(ConflictError):
             f"Menu item {item['id']} ({item['name']}) is from restaurant {item['restaurant_id']}, but the cart "
             f"has items from restaurant {cart_restaurant_id}. Clear the cart to order from another restaurant."
         )
+
+
+class ItemNotInCartError(NotFoundError):
+    def __init__(self, menu_item_id: int):
+        super().__init__(f"Menu item {menu_item_id} is not in the cart")
 
 
 class QuantityLimitError(BadRequestError):
@@ -74,3 +79,14 @@ class CartService:
 
         # The first item decides which restaurant the cart belongs to
         return self.cart_repository.update(cart["id"], {"items": items, "restaurant_id": item["restaurant_id"]})
+
+    # --- 3.4 Update quantities ---
+
+    def update_quantity(self, customer_id: int, menu_item_id: int, quantity: int) -> dict:
+        cart = self.get_or_create_active_cart(customer_id)
+        items = [dict(line) for line in cart["items"]]
+        line = next((line for line in items if line["menu_item_id"] == menu_item_id), None)
+        if line is None:
+            raise ItemNotInCartError(menu_item_id)
+        line["quantity"] = quantity
+        return self.cart_repository.update(cart["id"], {"items": items})

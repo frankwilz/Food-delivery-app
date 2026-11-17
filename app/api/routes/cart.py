@@ -6,7 +6,7 @@ from app.repositories.cart_repository import CartRepository
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.menu_item_repository import MenuItemRepository
 from app.repositories.restaurant_repository import RestaurantRepository
-from app.schemas.cart import CartItemAdd, CartResponse
+from app.schemas.cart import CartItemAdd, CartItemUpdate, CartResponse
 from app.schemas.error import ErrorResponse
 from app.services.cart_service import CartService
 from app.services.customer_service import CustomerService
@@ -16,6 +16,7 @@ router = APIRouter(tags=["cart"])
 
 NOT_SIGNED_IN = {401: {"model": ErrorResponse, "description": "The token is missing, invalid or expired"}}
 DEACTIVATED = {403: {"model": ErrorResponse, "description": "The customer account has been deactivated"}}
+NOT_IN_CART = {404: {"model": ErrorResponse, "description": "The menu item is not in the cart"}}
 SIGNED_IN = {**NOT_SIGNED_IN, **DEACTIVATED}
 
 
@@ -74,3 +75,19 @@ def add_cart_item(
     service: CartService = Depends(get_cart_service),
 ):
     return service.add_item(customer["id"], body)
+
+
+@router.patch(
+    "/cart/items/{menu_item_id}",
+    response_model=CartResponse,
+    summary="Change an item's quantity",
+    description="Sets the quantity of an item already in the cart. Returns the updated cart.",
+    responses={**SIGNED_IN, **NOT_IN_CART},
+)
+def update_cart_item(
+    menu_item_id: int,
+    body: CartItemUpdate,
+    customer: dict = Depends(get_current_customer),
+    service: CartService = Depends(get_cart_service),
+):
+    return service.update_quantity(customer["id"], menu_item_id, body.quantity)

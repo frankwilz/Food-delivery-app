@@ -11,7 +11,7 @@ from app.repositories.customer_repository import CustomerRepository
 from app.repositories.menu_item_repository import MenuItemRepository
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.cart import MAX_QUANTITY, CartItemAdd
-from app.services.cart_service import CartService, DifferentRestaurantError, QuantityLimitError
+from app.services.cart_service import CartService, DifferentRestaurantError, ItemNotInCartError, QuantityLimitError
 from app.services.customer_service import CustomerService
 from app.services.menu_service import MenuItemDeactivatedError, MenuItemUnavailableError, MenuService
 
@@ -241,3 +241,64 @@ def test_add_item_is_documented(client):
     responses = client.get("/openapi.json").json()["paths"]["/cart/items"]["post"]["responses"]
 
     assert {"400", "401", "403", "404", "409"} <= set(responses)
+
+
+# --- 3.4 PATCH /cart/items/{menu_item_id} ---
+
+
+def test_update_quantity(client, tmp_path):
+    add(client, PIZZA, 1)
+
+    response = client.patch(f"/cart/items/{PIZZA}", json={"quantity": 4}, headers=ANA)
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["quantity"] == 4
+    assert stored_carts(tmp_path)[0]["items"] == [{"menu_item_id": PIZZA, "quantity": 4}]
+
+
+def test_update_changes_only_that_item(client):
+    add(client, PIZZA, 1)
+    add(client, SALAD, 2)
+
+    body = client.patch(f"/cart/items/{PIZZA}", json={"quantity": 5}, headers=ANA).json()
+
+    assert {line["menu_item_id"]: line["quantity"] for line in body["items"]} == {PIZZA: 5, SALAD: 2}
+
+
+def test_update_item_not_in_cart_returns_404(client):
+    add(client, PIZZA)
+
+    response = client.patch(f"/cart/items/{SALAD}", json={"quantity": 2}, headers=ANA)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"Menu item {SALAD} is not in the cart"
+
+
+@pytest.mark.parametrize("quantity", [0, -3, 2.5, 3.0, "3", MAX_QUANTITY + 1])
+def test_update_invalid_quantity_returns_422_and_changes_nothing(client, tmp_path, quantity):
+    add(client, PIZZA, 1)
+    before = stored_carts(tmp_path)
+
+    response = client.patch(f"/cart/items/{PIZZA}", json={"quantity": quantity}, headers=ANA)
+
+    assert response.status_code == 422
+    assert stored_carts(tmp_path) == before
+
+
+def test_update_requires_sign_in(client):
+    assert client.patch(f"/cart/items/{PIZZA}", json={"quantity": 2}).status_code == 401
+
+
+def test_deactivated_customer_cannot_update(client):
+    assert client.patch(f"/cart/items/{PIZZA}", json={"quantity": 2}, headers=CHLOE).status_code == 403
+
+
+def test_service_update_item_not_in_cart(service):
+    with pytest.raises(ItemNotInCartError):
+        service.update_quantity(ANA_ID, PIZZA, 2)
+
+
+def test_update_is_documented(client):
+    responses = client.get("/openapi.json").json()["paths"]["/cart/items/{menu_item_id}"]["patch"]["responses"]
+
+    assert {"401", "403", "404", "422"} <= set(responses)
