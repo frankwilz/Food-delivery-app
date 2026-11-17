@@ -43,5 +43,27 @@ class CartItemUpdate(BaseModel):
     quantity: int = Quantity
 
 
-class CartResponse(Cart):
-    """A cart as returned by the API."""
+class CartLine(BaseModel):
+    """A cart line priced from the current menu."""
+
+    menu_item_id: int
+    name: str
+    unit_price: float = Field(description="Current menu price.")
+    quantity: int
+    line_total: float = Field(description="`unit_price × quantity`, rounded to 2 decimals.")
+    is_orderable: bool = Field(
+        description="False if the item has since become unavailable or been removed from the menu. "
+        "Such an item stays in the cart but checkout will refuse it."
+    )
+
+
+class CartResponse(BaseModel):
+    """A cart with prices calculated by the backend from the current menu."""
+
+    id: int
+    customer_id: int
+    restaurant_id: int | None
+    status: Literal["active", "checked_out"]
+    items: list[CartLine]
+    subtotal: float = Field(description="Sum of the line totals.")
+    total: float = Field(description="Amount to pay. For now this equals the subtotal (no delivery fee or tax).")
