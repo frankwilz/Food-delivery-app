@@ -4,6 +4,7 @@ from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.cart import MAX_QUANTITY
 from app.services.cart_service import CartService
 from app.services.customer_service import CustomerService
+from app.services.menu_service import MenuService
 
 
 class EmptyCartError(BadRequestError):
@@ -27,10 +28,10 @@ class RestaurantClosedError(ConflictError):
 class CheckoutService:
     """Turns a customer's active cart into an order.
 
-    4.1 (this file so far): every check that must pass before anything is written. The checks
-    only read data, so a failed checkout leaves every JSON file unchanged.
-    Still to come: 4.2 recheck each item with `MenuService.get_orderable_item`, 4.4 save the
-    order, 4.5 call `CartService.clear` after the order is saved.
+    4.1 and 4.2 (this file so far): every check that must pass before anything is written,
+    including a recheck of every item against the current menu. The checks only read data, so
+    a failed checkout leaves every JSON file unchanged.
+    Still to come: 4.4 save the order, 4.5 call `CartService.clear` after the order is saved.
     """
 
     def __init__(
@@ -39,15 +40,18 @@ class CheckoutService:
         cart_repository: CartRepository,
         restaurant_repository: RestaurantRepository,
         cart_service: CartService,
+        menu_service: MenuService,
     ):
         self.customer_service = customer_service
         self.cart_repository = cart_repository
         self.restaurant_repository = restaurant_repository
         self.cart_service = cart_service
+        self.menu_service = menu_service
 
     def checkout(self, customer_id: int) -> dict:
         cart = self.validate_cart(customer_id)
-        # Until orders exist (4.4), checkout returns the validated cart priced from the current menu
+        # Until orders exist (4.4), checkout returns the validated cart. `priced` reads every price
+        # from the current menu, never from the cart or the request.
         return self.cart_service.priced(cart)
 
     def validate_cart(self, customer_id: int) -> dict:
@@ -73,4 +77,15 @@ class CheckoutService:
             if type(quantity) is not int or not 1 <= quantity <= MAX_QUANTITY:
                 raise InvalidCartQuantityError(line["menu_item_id"], quantity)
 
+        self.revalidate_items(cart)
         return cart
+
+    def revalidate_items(self, cart: dict) -> list[dict]:
+        """Recheck every cart item against the current menu and return the current menu items.
+
+        The menu may have changed since an item was added, so each item goes through the shared
+        rule, `MenuService.get_orderable_item`, rather than a copy of it. The first item that can
+        no longer be ordered stops checkout: 409 if it is unavailable or deactivated (the message
+        names the item), 404 if it no longer exists at all.
+        """
+        return [self.menu_service.get_orderable_item(line["menu_item_id"]) for line in cart["items"]]
