@@ -29,6 +29,7 @@ def auth(customer_id: int) -> dict:
 
 
 ANA = auth(ANA_ID)
+MANAGER = auth(4)  # restaurant and menu changes need a manager (2.5)
 
 
 def data_files(tmp_path) -> dict[str, str]:
@@ -77,7 +78,7 @@ def test_checkout_of_a_valid_cart_returns_it_priced(client):
 
 def test_checkout_uses_current_menu_prices(client):
     client.post("/cart/items", json={"menu_item_id": PIZZA, "quantity": 2}, headers=ANA)
-    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 20})
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 20}, headers=MANAGER)
 
     assert client.post("/checkout", headers=ANA).json()["total"] == 40.0
 
@@ -140,7 +141,7 @@ def test_missing_restaurant_returns_404(client, tmp_path):
 
 def test_closed_restaurant_returns_409(client, tmp_path):
     client.post("/cart/items", json={"menu_item_id": PIZZA, "quantity": 1}, headers=ANA)
-    client.patch("/restaurants/1", json={"is_open": False})
+    client.patch("/restaurants/1", json={"is_open": False}, headers=MANAGER)
     before = data_files(tmp_path)
 
     response = client.post("/checkout", headers=ANA)
@@ -218,7 +219,7 @@ def add_pizza_and_salad(client) -> None:
 
 def test_item_made_unavailable_after_adding_returns_409_naming_it(client, tmp_path):
     add_pizza_and_salad(client)
-    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False})
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False}, headers=MANAGER)
     before = data_files(tmp_path)
 
     response = client.post("/checkout", headers=ANA)
@@ -230,7 +231,7 @@ def test_item_made_unavailable_after_adding_returns_409_naming_it(client, tmp_pa
 
 def test_item_deactivated_after_adding_returns_409_naming_it(client, tmp_path):
     add_pizza_and_salad(client)
-    client.delete(f"/restaurants/1/menu/{PIZZA}")
+    client.delete(f"/restaurants/1/menu/{PIZZA}", headers=MANAGER)
     before = data_files(tmp_path)
 
     response = client.post("/checkout", headers=ANA)
@@ -242,10 +243,10 @@ def test_item_deactivated_after_adding_returns_409_naming_it(client, tmp_path):
 
 def test_item_available_again_can_be_checked_out(client):
     add_pizza_and_salad(client)
-    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False})
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False}, headers=MANAGER)
     assert client.post("/checkout", headers=ANA).status_code == 409
 
-    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": True})
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": True}, headers=MANAGER)
 
     assert client.post("/checkout", headers=ANA).status_code == 200
 
@@ -263,8 +264,8 @@ def test_item_missing_from_the_menu_file_returns_404(client, tmp_path):
 
 def test_price_change_after_adding_is_used_at_checkout(client):
     add_pizza_and_salad(client)
-    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.5})
-    client.patch(f"/restaurants/1/menu/{SALAD}", json={"price": 10})
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.5}, headers=MANAGER)
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"price": 10}, headers=MANAGER)
 
     body = client.post("/checkout", headers=ANA).json()
 
@@ -285,11 +286,11 @@ def test_a_price_written_into_the_cart_file_is_ignored(client, tmp_path):
 def test_service_revalidation_errors(checkout_service, client):
     add_pizza_and_salad(client)
 
-    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False})
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False}, headers=MANAGER)
     with pytest.raises(MenuItemUnavailableError):
         checkout_service.validate_cart(ANA_ID)
 
-    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": True, "is_active": False})
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": True, "is_active": False}, headers=MANAGER)
     with pytest.raises(MenuItemDeactivatedError):
         checkout_service.validate_cart(ANA_ID)
 
@@ -312,7 +313,7 @@ def test_revalidation_uses_the_shared_orderable_item_rule(checkout_service, clie
 
 def test_revalidate_items_returns_current_menu_items(checkout_service, client):
     add_pizza_and_salad(client)
-    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.5})
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.5}, headers=MANAGER)
     cart = checkout_service.cart_repository.get_active_for_customer(ANA_ID)
 
     items = checkout_service.revalidate_items(cart)
