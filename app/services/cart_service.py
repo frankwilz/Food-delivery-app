@@ -90,3 +90,27 @@ class CartService:
             raise ItemNotInCartError(menu_item_id)
         line["quantity"] = quantity
         return self.cart_repository.update(cart["id"], {"items": items})
+
+    # --- 3.5 Remove items and clear ---
+
+    def remove_item(self, customer_id: int, menu_item_id: int) -> dict:
+        cart = self.get_or_create_active_cart(customer_id)
+        items = [line for line in cart["items"] if line["menu_item_id"] != menu_item_id]
+        if len(items) == len(cart["items"]):
+            raise ItemNotInCartError(menu_item_id)
+        changes = {"items": items}
+        if not items:
+            # An empty cart is no longer tied to a restaurant
+            changes["restaurant_id"] = None
+        return self.cart_repository.update(cart["id"], changes)
+
+    def clear_for_customer(self, customer_id: int) -> dict:
+        cart = self.get_or_create_active_cart(customer_id)
+        return self.clear(cart["id"])
+
+    def clear(self, cart_id: int) -> dict:
+        """Empty a cart and untie it from its restaurant. Checkout calls this after saving an order (4.5)."""
+        cart = self.cart_repository.update(cart_id, {"items": [], "restaurant_id": None})
+        if cart is None:
+            raise NotFoundError(f"Cart {cart_id} not found")
+        return cart
