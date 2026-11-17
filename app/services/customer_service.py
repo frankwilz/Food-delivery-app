@@ -1,7 +1,7 @@
-from app.core.errors import ConflictError, ForbiddenError, NotFoundError
+from app.core.errors import ConflictError, EmptyUpdateError, ForbiddenError, NotFoundError
 from app.core.security import hash_password
 from app.repositories.customer_repository import CustomerRepository
-from app.schemas.customer import CustomerCreate
+from app.schemas.customer import CustomerCreate, CustomerUpdate
 
 
 class DuplicateEmailError(ConflictError):
@@ -49,6 +49,23 @@ class CustomerService:
         if customer is None:
             raise CustomerNotFoundError(customer_id)
         return ensure_active(customer)
+
+    def update_profile(self, customer_id: int, changes: CustomerUpdate) -> dict:
+        """Change the customer's name, email and/or delivery address, and return the updated account.
+
+        `CustomerUpdate` only has those three fields and forbids any other, so `id`, `role`,
+        `is_active` and the password hash can never be changed here (422 before this runs).
+        """
+        fields = changes.model_dump(exclude_unset=True)
+        if not fields:
+            raise EmptyUpdateError()
+        self.get_active_customer(customer_id)
+        if "email" in fields:
+            # Unique ignoring case, like registration; changing only the case of your own email is fine
+            owner = self.repository.get_by_email(fields["email"])
+            if owner is not None and owner["id"] != customer_id:
+                raise DuplicateEmailError(fields["email"])
+        return self.repository.update(customer_id, fields)
 
     def deactivate(self, customer_id: int) -> dict:
         """Deactivate an account. The record is kept, so the email stays taken and orders keep their owner.
