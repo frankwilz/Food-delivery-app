@@ -29,8 +29,8 @@ router = APIRouter(tags=["checkout"])
         404: {"model": ErrorResponse, "description": "The cart's restaurant or one of its menu items no longer exists"},
         409: {
             "model": ErrorResponse,
-            "description": "The cart's restaurant is closed, an item in the cart is now unavailable or removed "
-            "from the menu, or the cart has already been checked out",
+            "description": "The cart's restaurant is closed, an item in the cart is now unavailable, removed "
+            "from the menu or from another restaurant, or the cart has already been checked out",
         },
     },
 )

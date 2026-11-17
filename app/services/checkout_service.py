@@ -5,7 +5,7 @@ from app.repositories.cart_repository import CartRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.cart import MAX_QUANTITY
-from app.services.cart_service import CartService
+from app.services.cart_service import CartService, DifferentRestaurantError
 from app.services.customer_service import CustomerService
 from app.services.menu_service import MenuService
 from app.services.pricing import price_lines
@@ -126,7 +126,13 @@ class CheckoutService:
             if type(quantity) is not int or not 1 <= quantity <= MAX_QUANTITY:
                 raise InvalidCartQuantityError(line["menu_item_id"], quantity)
 
-        return customer, cart, self.revalidate_items(cart)
+        menu_items = self.revalidate_items(cart)
+        # The cart only lets items from one restaurant in, but recheck here so an order can never
+        # mix restaurants, even if the cart file was changed outside the API (5.3)
+        for item in menu_items:
+            if item["restaurant_id"] != cart["restaurant_id"]:
+                raise DifferentRestaurantError(item, cart["restaurant_id"])
+        return customer, cart, menu_items
 
     def revalidate_items(self, cart: dict) -> list[dict]:
         """Recheck every cart item against the current menu and return the current menu items.
