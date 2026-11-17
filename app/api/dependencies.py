@@ -24,7 +24,10 @@ def get_current_customer(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     service: AuthService = Depends(get_auth_service),
 ) -> dict:
-    """Return the customer identified by `Authorization: Bearer <token>`, or raise a 401.
+    """Return the active customer identified by `Authorization: Bearer <token>`.
+
+    Raises a 401 if the header or token is missing, invalid or expired, and a 403 if the
+    account has been deactivated.
 
     Add `customer: dict = Depends(get_current_customer)` to any route that needs a signed-in customer.
     """

@@ -10,6 +10,8 @@ from app.services.customer_service import CustomerService
 router = APIRouter()
 
 NOT_SIGNED_IN = {401: {"model": ErrorResponse, "description": "The token is missing, invalid or expired"}}
+DEACTIVATED = {403: {"model": ErrorResponse, "description": "The customer account has been deactivated"}}
+SIGNED_IN = {**NOT_SIGNED_IN, **DEACTIVATED}
 DUPLICATE_EMAIL = {409: {"model": ErrorResponse, "description": "An account with this email already exists"}}
 
 
@@ -41,7 +43,25 @@ def register_customer(customer: CustomerCreate, service: CustomerService = Depen
         "Returns the account that the `Authorization: Bearer <token>` header belongs to. Get a token "
         "from `POST /auth/login`. The password hash is never returned."
     ),
-    responses=NOT_SIGNED_IN,
+    responses=SIGNED_IN,
 )
 def get_signed_in_customer(customer: dict = Depends(get_current_customer)):
     return customer
+
+
+@router.post(
+    "/customers/me/deactivate",
+    response_model=Customer,
+    summary="Deactivate my account",
+    description=(
+        "Deactivates the signed-in customer's account and returns it with `is_active: false`. The record "
+        "is kept, so the email stays taken. Afterwards the customer cannot log in, and every token issued "
+        "before, including the one used for this request, is refused with a 403."
+    ),
+    responses=SIGNED_IN,
+)
+def deactivate_signed_in_customer(
+    customer: dict = Depends(get_current_customer),
+    service: CustomerService = Depends(get_customer_service),
+):
+    return service.deactivate(customer["id"])

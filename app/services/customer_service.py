@@ -48,6 +48,24 @@ class CustomerService:
         customer = self.repository.get_by_id(customer_id)
         if customer is None:
             raise CustomerNotFoundError(customer_id)
-        if not customer["is_active"]:
-            raise CustomerDeactivatedError(customer_id)
-        return customer
+        return ensure_active(customer)
+
+    def deactivate(self, customer_id: int) -> dict:
+        """Deactivate an account. The record is kept, so the email stays taken and orders keep their owner.
+
+        From then on the customer cannot log in, and tokens issued before are refused (both 403).
+        """
+        if self.repository.get_by_id(customer_id) is None:
+            raise CustomerNotFoundError(customer_id)
+        return self.repository.update(customer_id, {"is_active": False})
+
+
+def ensure_active(customer: dict) -> dict:
+    """Return the customer if the account is active, otherwise raise `CustomerDeactivatedError` (403).
+
+    Shared by `CustomerService.get_active_customer` and the login and token checks in
+    `AuthService`, so "is this account active?" is decided in one place.
+    """
+    if not customer["is_active"]:
+        raise CustomerDeactivatedError(customer["id"])
+    return customer
