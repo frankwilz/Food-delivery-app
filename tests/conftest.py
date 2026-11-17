@@ -9,9 +9,11 @@ from app.api.routes import customers as customers_route
 from app.api.routes import menu as menu_route
 from app.api.routes import restaurants as restaurants_route
 from app.core.config import BASE_DIR
+from app.core.security import create_access_token
 from app.main import app
 
 REAL_DATA = BASE_DIR / "data"
+MANAGER_ID = 4  # Dev Patel, the manager in data/customers.json
 
 
 @pytest.fixture(autouse=True)
@@ -37,3 +39,9 @@ def isolated_data(tmp_path, monkeypatch):
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+@pytest.fixture
+def manager_client():
+    """A client that sends the manager's token on every request, for restaurant and menu changes."""
+    return TestClient(app, headers={"Authorization": f"Bearer {create_access_token(MANAGER_ID)}"})

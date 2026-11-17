@@ -12,6 +12,14 @@ from app.services.restaurant_service import (
     RestaurantService,
 )
 
+
+@pytest.fixture
+def client(manager_client):
+    # Creating and editing restaurants and menus requires a manager (2.5), so these tests sign in as
+    # one. Reads are public; tests/test_authorization.py checks the 401 and 403 cases.
+    return manager_client
+
+
 # Test data (copied to a temp folder by conftest.py):
 #   1 Boston Pizza       Pizza     123 Kelowna Road    3.3 open
 #   2 Taco Bell          Mexican   456 Okanagan Drive  2.9 open

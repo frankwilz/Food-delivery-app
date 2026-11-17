@@ -1,4 +1,4 @@
-from app.core.errors import UnauthorizedError
+from app.core.errors import ForbiddenError, UnauthorizedError
 from app.core.security import create_access_token, decode_access_token, hash_password, verify_password
 from app.repositories.customer_repository import CustomerRepository
 from app.services.customer_service import ensure_active
@@ -22,6 +22,11 @@ class NotAuthenticatedError(UnauthorizedError):
 class InvalidTokenError(UnauthorizedError):
     def __init__(self):
         super().__init__("Invalid or expired token")
+
+
+class RoleRequiredError(ForbiddenError):
+    def __init__(self, role: str):
+        super().__init__(f"Only a {role} can do this")
 
 
 class AuthService:

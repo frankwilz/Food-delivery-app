@@ -15,6 +15,14 @@ from app.api.routes import restaurants as restaurants_route
 from app.core.config import BASE_DIR
 from app.main import app
 
+
+@pytest.fixture
+def client(manager_client):
+    # Creating and editing restaurants and menus requires a manager (2.5), so these tests sign in as
+    # one. Reads are public; tests/test_authorization.py checks the 401 and 403 cases.
+    return manager_client
+
+
 # --- Complete vertical slice (HTTP -> route -> service -> repository -> JSON file) ---
 
 
@@ -139,9 +147,12 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def _request(method: str, url: str, body: dict | None = None) -> tuple[int, dict]:
+def _request(method: str, url: str, body: dict | None = None, token: str | None = None) -> tuple[int, dict]:
     data = json.dumps(body).encode() if body is not None else None
-    request = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
             return response.status, json.loads(response.read())
@@ -154,7 +165,8 @@ def _start_server(data_dir, port: int) -> subprocess.Popen:
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port)],
         cwd=BASE_DIR,
-        env={**os.environ, "DATA_DIR": str(data_dir)},
+        # A fixed SECRET_KEY, so a token stays valid across the restart (as it would in production)
+        env={**os.environ, "DATA_DIR": str(data_dir), "SECRET_KEY": "restart-test-key"},
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -179,21 +191,33 @@ def test_data_persists_after_server_restart(tmp_path):
     data_dir.mkdir()
     shutil.copy(BASE_DIR / "data" / "restaurants.json", data_dir / "restaurants.json")
     shutil.copy(BASE_DIR / "data" / "menu_items.json", data_dir / "menu_items.json")
+    shutil.copy(BASE_DIR / "data" / "customers.json", data_dir / "customers.json")
     committed = (BASE_DIR / "data" / "restaurants.json").read_text(encoding="utf-8")
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
 
     server = _start_server(data_dir, port)
     try:
+        # Restaurant and menu changes need a manager (2.5)
+        manager = {"email": "dev.patel@example.com", "password": "Dev-demo-2026"}
+        status, login = _request("POST", f"{base}/auth/login", manager)
+        assert status == 200
+        token = login["access_token"]
         status, restaurant = _request(
-            "POST", f"{base}/restaurants", {"name": "Restart Diner", "cuisine": "Diner", "address": "1 Reboot Road"}
+            "POST",
+            f"{base}/restaurants",
+            {"name": "Restart Diner", "cuisine": "Diner", "address": "1 Reboot Road"},
+            token,
         )
         assert status == 201
         status, item = _request(
-            "POST", f"{base}/restaurants/{restaurant['id']}/menu", {"name": "Pancakes", "price": 8.5, "category": "Mains"}
+            "POST",
+            f"{base}/restaurants/{restaurant['id']}/menu",
+            {"name": "Pancakes", "price": 8.5, "category": "Mains"},
+            token,
         )
         assert status == 201
-        assert _request("PATCH", f"{base}/restaurants/1", {"is_open": False})[0] == 200
+        assert _request("PATCH", f"{base}/restaurants/1", {"is_open": False}, token)[0] == 200
     finally:
         _stop_server(server)
 

@@ -29,6 +29,7 @@ def auth(customer_id: int) -> dict:
 
 
 ANA = auth(ANA_ID)
+MANAGER = auth(4)  # restaurant and menu changes need a manager (2.5)
 
 
 def data_files(tmp_path) -> dict[str, str]:
@@ -77,7 +78,7 @@ def test_checkout_of_a_valid_cart_returns_it_priced(client):
 
 def test_checkout_uses_current_menu_prices(client):
     client.post("/cart/items", json={"menu_item_id": PIZZA, "quantity": 2}, headers=ANA)
-    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 20})
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 20}, headers=MANAGER)
 
     assert client.post("/checkout", headers=ANA).json()["total"] == 40.0
 
@@ -140,7 +141,7 @@ def test_missing_restaurant_returns_404(client, tmp_path):
 
 def test_closed_restaurant_returns_409(client, tmp_path):
     client.post("/cart/items", json={"menu_item_id": PIZZA, "quantity": 1}, headers=ANA)
-    client.patch("/restaurants/1", json={"is_open": False})
+    client.patch("/restaurants/1", json={"is_open": False}, headers=MANAGER)
     before = data_files(tmp_path)
 
     response = client.post("/checkout", headers=ANA)
