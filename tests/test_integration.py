@@ -11,7 +11,7 @@ import urllib.request
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes import restaurants as restaurants_route
+from app.core import config
 from app.core.config import BASE_DIR
 from app.main import app
 
@@ -84,7 +84,7 @@ def test_corrupt_data_file_returns_json_500(server_error_client, tmp_path):
 
 
 def test_missing_data_file_returns_json_500(server_error_client, tmp_path, monkeypatch):
-    monkeypatch.setattr(restaurants_route, "RESTAURANTS_FILE", tmp_path / "missing.json")
+    monkeypatch.setattr(config, "RESTAURANTS_FILE", tmp_path / "missing.json")
 
     response = server_error_client.get("/restaurants/1")
 

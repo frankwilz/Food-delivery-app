@@ -1,9 +1,6 @@
 from fastapi import APIRouter, Depends, Query, status
 
-from app.api.dependencies import MANAGER_ONLY, require_manager
-from app.core.config import MENU_ITEMS_FILE, RESTAURANTS_FILE
-from app.repositories.menu_item_repository import MenuItemRepository
-from app.repositories.restaurant_repository import RestaurantRepository
+from app.api.dependencies import MANAGER_ONLY, get_menu_service, require_manager
 from app.schemas.error import ErrorResponse
 from app.schemas.menu_item import MenuItem, MenuItemCreate, MenuItemUpdate
 from app.services.menu_service import MenuService
@@ -16,13 +13,6 @@ ITEM_NOT_FOUND = {
 }
 DUPLICATE_NAME = {409: {"model": ErrorResponse, "description": "The restaurant already has an item with this name"}}
 EMPTY_UPDATE = {400: {"model": ErrorResponse, "description": "The update body contained no fields"}}
-
-
-def get_menu_service() -> MenuService:
-    return MenuService(
-        MenuItemRepository(MENU_ITEMS_FILE),
-        RestaurantRepository(RESTAURANTS_FILE),
-    )
 
 
 @router.get(

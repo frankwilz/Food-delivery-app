@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import get_current_customer
-from app.api.routes import cart as cart_route
+from app.api.dependencies import get_current_customer, get_order_service
 from app.schemas.error import ErrorResponse
 from app.schemas.order import Order
 from app.services.order_service import OrderService
@@ -12,11 +11,6 @@ SIGNED_IN = {
     401: {"model": ErrorResponse, "description": "The token is missing, invalid or expired"},
     403: {"model": ErrorResponse, "description": "The customer account has been deactivated"},
 }
-
-
-def get_order_service() -> OrderService:
-    # Built from the cart route's builders, so it reads the same orders file that checkout writes
-    return OrderService(cart_route.build_order_repository())
 
 
 @router.get(
