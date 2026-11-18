@@ -24,6 +24,11 @@ class InvalidCartQuantityError(BadRequestError):
         )
 
 
+class CartAlreadyCheckedOutError(ConflictError):
+    def __init__(self, cart_id: int, order_id: int):
+        super().__init__(f"Cart {cart_id} has already been checked out as order {order_id}")
+
+
 class RestaurantClosedError(ConflictError):
     def __init__(self, restaurant: dict):
         super().__init__(f"Restaurant {restaurant['id']} ({restaurant['name']}) is closed and not accepting orders")
@@ -37,7 +42,7 @@ class CheckoutService:
     every JSON file unchanged.
     4.3: the order's lines and totals come from `price_lines`, the same function the cart uses.
     4.4: the order is built from those totals plus snapshots, and saved.
-    Still to come: 4.5 close the cart after the order is saved.
+    4.5: only after the order is saved is the cart closed (`CartService.mark_checked_out`).
     """
 
     def __init__(
@@ -59,12 +64,24 @@ class CheckoutService:
     def checkout(self, customer_id: int) -> dict:
         """Check the cart, then build and save the order, and return it."""
         customer, cart, menu_items = self.prepare(customer_id)
-        return self.order_repository.create(self.build_order(customer, cart, menu_items))
+
+        # Each cart becomes at most one order. This only finds one if an earlier checkout saved the
+        # order but failed before closing the cart, so finish that job instead of ordering twice.
+        existing = self.order_repository.get_by_cart_id(cart["id"])
+        if existing is not None:
+            self.cart_service.mark_checked_out(cart["id"])
+            raise CartAlreadyCheckedOutError(cart["id"], existing["id"])
+
+        # Save first: if saving fails, the cart is untouched and the customer can simply try again
+        order = self.order_repository.create(self.build_order(customer, cart, menu_items))
+        self.cart_service.mark_checked_out(cart["id"])
+        return order
 
     def build_order(self, customer: dict, cart: dict, menu_items: list[dict]) -> dict:
         """The order record to save. Nothing in it refers back to live data that could change it later."""
         return {
             "customer_id": customer["id"],
+            "cart_id": cart["id"],
             **self.calculate_totals(cart, menu_items),
             # A snapshot, so a later profile change does not move a past delivery
             "delivery_address": customer["delivery_address"],

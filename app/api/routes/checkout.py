@@ -32,7 +32,8 @@ def get_checkout_service() -> CheckoutService:
         "still be ordered from the **current** menu. Nothing is written if a check fails. The lines and "
         "totals are calculated by the backend from the current menu with the same pricing as the cart; "
         "prices or totals sent by the client are ignored. The saved order keeps a snapshot of each "
-        "item's name and price and of the delivery address, so later changes never alter it."
+        "item's name and price and of the delivery address, so later changes never alter it. Only after "
+        "the order is saved is the cart closed; `GET /cart` then returns a new, empty cart."
     ),
     responses={
         400: {"model": ErrorResponse, "description": "The cart is empty or holds an invalid quantity"},
@@ -41,8 +42,8 @@ def get_checkout_service() -> CheckoutService:
         404: {"model": ErrorResponse, "description": "The cart's restaurant or one of its menu items no longer exists"},
         409: {
             "model": ErrorResponse,
-            "description": "The cart's restaurant is closed, or an item in the cart is now unavailable or removed "
-            "from the menu",
+            "description": "The cart's restaurant is closed, an item in the cart is now unavailable or removed "
+            "from the menu, or the cart has already been checked out",
         },
     },
 )

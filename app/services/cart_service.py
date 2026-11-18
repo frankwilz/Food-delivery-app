@@ -117,6 +117,16 @@ class CartService:
             raise NotFoundError(f"Cart {cart_id} not found")
         return cart
 
+    def mark_checked_out(self, cart_id: int) -> dict:
+        """Close a cart once its order is saved (4.5). The items are kept as a record of what was ordered.
+
+        A closed cart is no longer the customer's active cart, so `GET /cart` gives them a new, empty one.
+        """
+        cart = self.cart_repository.update(cart_id, {"status": "checked_out"})
+        if cart is None:
+            raise NotFoundError(f"Cart {cart_id} not found")
+        return cart
+
     # --- 3.6 Subtotal and total ---
 
     def priced(self, cart: dict) -> dict:
