@@ -1,5 +1,8 @@
+from datetime import datetime, timezone
+
 from app.core.errors import BadRequestError, ConflictError, RestaurantNotFoundError
 from app.repositories.cart_repository import CartRepository
+from app.repositories.order_repository import OrderRepository
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.cart import MAX_QUANTITY
 from app.services.cart_service import CartService
@@ -33,7 +36,8 @@ class CheckoutService:
     every item against the current menu. The checks only read data, so a failed checkout leaves
     every JSON file unchanged.
     4.3: the order's lines and totals come from `price_lines`, the same function the cart uses.
-    Still to come: 4.4 save the order, 4.5 close the cart after the order is saved.
+    4.4: the order is built from those totals plus snapshots, and saved.
+    Still to come: 4.5 close the cart after the order is saved.
     """
 
     def __init__(
@@ -43,21 +47,34 @@ class CheckoutService:
         restaurant_repository: RestaurantRepository,
         cart_service: CartService,
         menu_service: MenuService,
+        order_repository: OrderRepository,
     ):
         self.customer_service = customer_service
         self.cart_repository = cart_repository
         self.restaurant_repository = restaurant_repository
         self.cart_service = cart_service
         self.menu_service = menu_service
+        self.order_repository = order_repository
 
     def checkout(self, customer_id: int) -> dict:
-        cart, menu_items = self.prepare(customer_id)
-        # Until orders exist (4.4), checkout returns the order's lines and totals
-        return self.calculate_totals(cart, menu_items)
+        """Check the cart, then build and save the order, and return it."""
+        customer, cart, menu_items = self.prepare(customer_id)
+        return self.order_repository.create(self.build_order(customer, cart, menu_items))
+
+    def build_order(self, customer: dict, cart: dict, menu_items: list[dict]) -> dict:
+        """The order record to save. Nothing in it refers back to live data that could change it later."""
+        return {
+            "customer_id": customer["id"],
+            **self.calculate_totals(cart, menu_items),
+            # A snapshot, so a later profile change does not move a past delivery
+            "delivery_address": customer["delivery_address"],
+            "status": "placed",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     def validate_cart(self, customer_id: int) -> dict:
         """Return the customer's active cart if it can be checked out, otherwise raise a clear error."""
-        cart, _ = self.prepare(customer_id)
+        _, cart, _ = self.prepare(customer_id)
         return cart
 
     def calculate_totals(self, cart: dict, menu_items: list[dict]) -> dict:
@@ -69,10 +86,10 @@ class CheckoutService:
         quantities = [line["quantity"] for line in cart["items"]]
         return {"restaurant_id": cart["restaurant_id"], **price_lines(list(zip(menu_items, quantities)))}
 
-    def prepare(self, customer_id: int) -> tuple[dict, list[dict]]:
-        """Run every check and return the cart with its current menu items, in cart order."""
+    def prepare(self, customer_id: int) -> tuple[dict, dict, list[dict]]:
+        """Run every check and return the customer, their cart and its current menu items, in cart order."""
         # 403 deactivated, 404 unknown customer
-        self.customer_service.get_active_customer(customer_id)
+        customer = self.customer_service.get_active_customer(customer_id)
 
         # Read only: unlike GET /cart, checkout never creates a cart
         cart = self.cart_repository.get_active_for_customer(customer_id)
@@ -92,7 +109,7 @@ class CheckoutService:
             if type(quantity) is not int or not 1 <= quantity <= MAX_QUANTITY:
                 raise InvalidCartQuantityError(line["menu_item_id"], quantity)
 
-        return cart, self.revalidate_items(cart)
+        return customer, cart, self.revalidate_items(cart)
 
     def revalidate_items(self, cart: dict) -> list[dict]:
         """Recheck every cart item against the current menu and return the current menu items.

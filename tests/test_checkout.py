@@ -1,6 +1,8 @@
-"""Tests for checkout: 4.1 (#43) validate the cart, 4.2 (#44) revalidate the menu, 4.3 (#45) order total."""
+"""Tests for checkout: 4.1 (#43) validate the cart, 4.2 (#44) revalidate the menu, 4.3 (#45) order total,
+4.4 (#46) create and persist the order."""
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -9,6 +11,7 @@ from app.core.security import create_access_token
 from app.repositories.cart_repository import CartRepository
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.menu_item_repository import MenuItemRepository
+from app.repositories.order_repository import OrderRepository
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.services.cart_service import CartService
 from app.services.checkout_service import (
@@ -59,7 +62,8 @@ def checkout_service(tmp_path) -> CheckoutService:
     restaurants = RestaurantRepository(tmp_path / "restaurants.json")
     carts = CartRepository(tmp_path / "carts.json")
     menu = MenuService(MenuItemRepository(tmp_path / "menu_items.json"), restaurants)
-    return CheckoutService(customers, carts, restaurants, CartService(carts, menu, customers), menu)
+    orders = OrderRepository(tmp_path / "orders.json")
+    return CheckoutService(customers, carts, restaurants, CartService(carts, menu, customers), menu, orders)
 
 
 # --- success ---
@@ -71,7 +75,7 @@ def test_checkout_of_a_valid_cart_returns_it_priced(client):
 
     response = client.post("/checkout", headers=ANA)
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     body = response.json()
     assert body["restaurant_id"] == 1
     assert body["total"] == 43.47  # 2 × 16.99 + 9.49
@@ -249,7 +253,7 @@ def test_item_available_again_can_be_checked_out(client):
 
     client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": True}, headers=MANAGER)
 
-    assert client.post("/checkout", headers=ANA).status_code == 200
+    assert client.post("/checkout", headers=ANA).status_code == 201
 
 
 def test_item_missing_from_the_menu_file_returns_404(client, tmp_path):
@@ -330,7 +334,7 @@ def test_checkout_returns_the_order_lines_and_totals(client):
 
     body = client.post("/checkout", headers=ANA).json()
 
-    assert body == {
+    assert {key: body[key] for key in ("restaurant_id", "items", "subtotal", "total")} == {
         "restaurant_id": 1,
         "items": [
             {"menu_item_id": PIZZA, "name": "Pepperoni Pizza", "unit_price": 16.99, "quantity": 2, "line_total": 33.98},
@@ -403,3 +407,120 @@ def test_service_calculate_totals_uses_the_menu_items_given(checkout_service):
 
     assert totals["items"][0]["line_total"] == 40.0
     assert totals["total"] == 40.0
+
+
+# --- 4.4: create and persist the order ---
+
+
+def stored_orders(tmp_path) -> list[dict]:
+    return json.loads((tmp_path / "orders.json").read_text(encoding="utf-8"))
+
+
+def test_checkout_returns_201_with_the_saved_order(client, tmp_path):
+    add_pizza_and_salad(client)
+    before = datetime.now(timezone.utc)
+
+    response = client.post("/checkout", headers=ANA)
+
+    assert response.status_code == 201
+    order = response.json()
+    created_at = datetime.fromisoformat(order.pop("created_at"))
+    assert before - timedelta(seconds=1) <= created_at <= datetime.now(timezone.utc)
+    assert order == {
+        "id": 1,
+        "customer_id": ANA_ID,
+        "restaurant_id": 1,
+        "items": [
+            {"menu_item_id": PIZZA, "name": "Pepperoni Pizza", "unit_price": 16.99, "quantity": 2, "line_total": 33.98},
+            {"menu_item_id": SALAD, "name": "Caesar Salad", "unit_price": 9.49, "quantity": 1, "line_total": 9.49},
+        ],
+        "subtotal": 43.47,
+        "total": 43.47,
+        "delivery_address": "1155 Bernard Avenue, Kelowna",
+        "status": "placed",
+    }
+
+
+def test_order_is_saved_to_the_orders_file(client, tmp_path):
+    add_pizza_and_salad(client)
+
+    order = client.post("/checkout", headers=ANA).json()
+
+    saved = stored_orders(tmp_path)
+    assert len(saved) == 1
+    assert saved[0]["id"] == order["id"]
+    assert saved[0]["items"] == order["items"]
+    assert saved[0]["delivery_address"] == "1155 Bernard Avenue, Kelowna"
+    # The stored line is a snapshot of the name and price, not just an id
+    assert saved[0]["items"][0]["name"] == "Pepperoni Pizza"
+    assert saved[0]["items"][0]["unit_price"] == 16.99
+
+
+def test_order_snapshot_does_not_change_with_the_menu_or_profile(client, tmp_path):
+    add_pizza_and_salad(client)
+    client.post("/checkout", headers=ANA)
+    saved = stored_orders(tmp_path)
+
+    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 99, "name": "Renamed Pizza"}, headers=MANAGER)
+    client.patch("/customers/me", json={"delivery_address": "1 New Street, Kelowna"}, headers=ANA)
+
+    assert stored_orders(tmp_path) == saved
+
+
+def test_failed_checkout_does_not_create_an_order(client, tmp_path):
+    add_pizza_and_salad(client)
+    client.patch(f"/restaurants/1/menu/{SALAD}", json={"is_available": False}, headers=MANAGER)
+
+    assert client.post("/checkout", headers=ANA).status_code == 409
+    assert stored_orders(tmp_path) == []
+
+
+def test_order_ids_stay_stable_across_new_repositories(client, tmp_path):
+    add_pizza_and_salad(client)
+    first = client.post("/checkout", headers=ANA).json()
+
+    # A new repository reading the same file, as after a restart, sees the same order and continues the ids
+    repository = OrderRepository(tmp_path / "orders.json")
+    assert repository.get_by_id(first["id"])["total"] == first["total"]
+    assert repository.create({"customer_id": 2})["id"] == first["id"] + 1
+
+
+def test_order_repository_get_by_customer(tmp_path):
+    repository = OrderRepository(tmp_path / "orders.json")
+    ana_first = repository.create({"customer_id": ANA_ID, "total": 1})
+    repository.create({"customer_id": 2, "total": 2})
+    ana_second = repository.create({"customer_id": ANA_ID, "total": 3})
+
+    assert repository.get_by_customer(ANA_ID) == [ana_first, ana_second]
+    assert repository.get_by_customer(99) == []
+    assert repository.get_by_id(99) is None
+
+
+def test_service_checkout_saves_and_returns_the_order(checkout_service, client, tmp_path):
+    add_pizza_and_salad(client)
+
+    order = checkout_service.checkout(ANA_ID)
+
+    assert order["status"] == "placed"
+    assert order["customer_id"] == ANA_ID
+    assert stored_orders(tmp_path) == [order]
+
+
+def test_service_build_order_takes_snapshots(checkout_service):
+    customer = {"id": ANA_ID, "delivery_address": "12 Snapshot Street"}
+    menu_items = [{"id": PIZZA, "name": "Pepperoni Pizza", "price": 16.99}]
+
+    order = checkout_service.build_order(customer, cart_record(), menu_items)
+
+    assert order["delivery_address"] == "12 Snapshot Street"
+    assert order["items"] == [
+        {"menu_item_id": PIZZA, "name": "Pepperoni Pizza", "unit_price": 16.99, "quantity": 2, "line_total": 33.98}
+    ]
+    assert order["status"] == "placed"
+    assert datetime.fromisoformat(order["created_at"]).tzinfo is not None
+
+
+def test_checkout_201_is_documented(client):
+    responses = client.get("/openapi.json").json()["paths"]["/checkout"]["post"]["responses"]
+
+    assert "201" in responses
