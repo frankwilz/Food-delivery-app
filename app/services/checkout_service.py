@@ -5,6 +5,7 @@ from app.schemas.cart import MAX_QUANTITY
 from app.services.cart_service import CartService
 from app.services.customer_service import CustomerService
 from app.services.menu_service import MenuService
+from app.services.pricing import price_lines
 
 
 class EmptyCartError(BadRequestError):
@@ -28,10 +29,11 @@ class RestaurantClosedError(ConflictError):
 class CheckoutService:
     """Turns a customer's active cart into an order.
 
-    4.1 and 4.2 (this file so far): every check that must pass before anything is written,
-    including a recheck of every item against the current menu. The checks only read data, so
-    a failed checkout leaves every JSON file unchanged.
-    Still to come: 4.4 save the order, 4.5 call `CartService.clear` after the order is saved.
+    4.1 and 4.2: every check that must pass before anything is written, including a recheck of
+    every item against the current menu. The checks only read data, so a failed checkout leaves
+    every JSON file unchanged.
+    4.3: the order's lines and totals come from `price_lines`, the same function the cart uses.
+    Still to come: 4.4 save the order, 4.5 close the cart after the order is saved.
     """
 
     def __init__(
@@ -49,13 +51,26 @@ class CheckoutService:
         self.menu_service = menu_service
 
     def checkout(self, customer_id: int) -> dict:
-        cart = self.validate_cart(customer_id)
-        # Until orders exist (4.4), checkout returns the validated cart. `priced` reads every price
-        # from the current menu, never from the cart or the request.
-        return self.cart_service.priced(cart)
+        cart, menu_items = self.prepare(customer_id)
+        # Until orders exist (4.4), checkout returns the order's lines and totals
+        return self.calculate_totals(cart, menu_items)
 
     def validate_cart(self, customer_id: int) -> dict:
         """Return the customer's active cart if it can be checked out, otherwise raise a clear error."""
+        cart, _ = self.prepare(customer_id)
+        return cart
+
+    def calculate_totals(self, cart: dict, menu_items: list[dict]) -> dict:
+        """Price the order with the shared pricing function (3.6), from the current menu items.
+
+        `menu_items` come from `revalidate_items`, so every price is the menu's current one. Prices
+        in the cart file or the request are never read; the request has no body at all.
+        """
+        quantities = [line["quantity"] for line in cart["items"]]
+        return {"restaurant_id": cart["restaurant_id"], **price_lines(list(zip(menu_items, quantities)))}
+
+    def prepare(self, customer_id: int) -> tuple[dict, list[dict]]:
+        """Run every check and return the cart with its current menu items, in cart order."""
         # 403 deactivated, 404 unknown customer
         self.customer_service.get_active_customer(customer_id)
 
@@ -77,8 +92,7 @@ class CheckoutService:
             if type(quantity) is not int or not 1 <= quantity <= MAX_QUANTITY:
                 raise InvalidCartQuantityError(line["menu_item_id"], quantity)
 
-        self.revalidate_items(cart)
-        return cart
+        return cart, self.revalidate_items(cart)
 
     def revalidate_items(self, cart: dict) -> list[dict]:
         """Recheck every cart item against the current menu and return the current menu items.
