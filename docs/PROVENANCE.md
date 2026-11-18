@@ -1,6 +1,6 @@
 # Provenance
 
-This file records where the work in this repository came from: who wrote each part, which pull request brought it in, which outside sources were used, and where AI tools helped. It covers Milestone 0 (`foundation-gate`) and Milestone 1 (`m1-vertical-slice`).
+This file records where the work in this repository came from: who wrote each part, which pull request brought it in, which outside sources were used, and where AI tools helped. It covers Milestone 0 (`foundation-gate`), Milestone 1 (`m1-vertical-slice`) and work toward Milestone 2.
 
 **Team:** Abdul & Friends
 
@@ -35,6 +35,24 @@ The information below comes from the repository's pull requests and git history 
 | #11 | Restaurant CRUD: `GET /restaurants/{id}`, `POST /restaurants`, `PATCH /restaurants/{id}`, search and filters; `RestaurantCreate`/`RestaurantUpdate`, shared `ErrorResponse`, extra sample restaurants | Zay Lin Myat | Frank Williams | `app/api/routes/restaurants.py`, `app/services/restaurant_service.py`, `app/repositories/restaurant_repository.py`, `app/schemas/restaurant.py`, `app/schemas/error.py`, `data/restaurants.json`, `tests/test_restaurants.py`, `README.md` |
 | #12 | Testing, CI and integration: GitHub Actions workflow, vertical-slice and real-restart persistence tests, JSON 500 for data-file errors, `/health` response model, README updates | Frank Williams | AbdulHaady Oludare | `.github/workflows/tests.yml`, `tests/test_integration.py`, `app/main.py`, `app/schemas/health.py`, `README.md` |
 | — | Frontend: restaurant list, details, menu view, create/update form | _To be completed_ | — | _To be completed_ |
+
+## Milestone 2: Customer-to-order integration (5.2)
+
+| Work | Contribution and source | Review status |
+| --- | --- | --- |
+| Shared FastAPI repository/service dependencies and route wiring ([PR #88](https://github.com/frankwilz/Food-delivery-app/pull/88)) | Frank Williams prepared the integration against current `main`, adapting Zay Lin Myat's original implementation in commit `96d7b74` (closed PR #86). Original authorship is retained with a co-author credit. | Pending approvals from Abdul138 and EuReKaA99; not merged. |
+| Representative carts/orders | Reused from Zay Lin Myat's preserved `96d7b74` implementation; validated against all five data files. | Pending review. |
+| Workflow and restart verification, demo instructions and test isolation | Frank Williams, with Codex assistance, adapted the preserved workflow examples and added focused behavioral coverage for registration, cart updates, checkout, order retrieval and persistence. | Pending review. |
+
+The existing order-retrieval implementation from commit `94c07ab` (PR #85, original author Zay Lin Myat) is an **unmerged prerequisite**, not new 5.2 work. It is included on the feature branch for testing, and kept outside the first 5.2 PR's file diff by using its branch as the base. No PR is merged as part of this preparation.
+
+**AI assistance:** OpenAI Codex inspected the preserved branches, adapted dependency wiring, helped write tests and documentation, ran verification and prepared the two review PRs. Human peer review and two teammate approvals remain required.
+
+### Decision evidence: shared dependency construction
+
+Previously checkout and order routes imported repository builders from the cart router, while other routers built separate services. Repository paths had to be patched in several modules during tests. All routes now obtain services from `app/api/dependencies.py`; repositories read their configured paths when constructed and FastAPI shares dependencies within a request. Services retain business rules and repositories retain file access.
+
+The trade-off is a central composition module that imports each subsystem. It keeps construction consistent and lets tests redirect all storage through one configuration module. Evidence is PR #88, `test_full_customer_to_order_workflow`, `test_customer_cart_and_order_persist_after_server_restarts` and the existing feature suite. Local validation: 477 tests passed, all five data files unchanged by tests, and the register → login → browse → cart → checkout → order-read workflow verified through Swagger UI on temporary data. Peer-review evidence will be recorded after review; this entry does not claim an approval or merge.
 
 ## Engineering design decision
 
