@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, cart, checkout, customers, menu, restaurants
+from app.api.routes import auth, cart, checkout, customers, menu, orders, restaurants
 from app.core.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 from app.schemas.error import ErrorResponse
 from app.schemas.health import HealthResponse
@@ -76,3 +76,4 @@ app.include_router(customers.router)
 app.include_router(auth.router)
 app.include_router(cart.router)
 app.include_router(checkout.router)
+app.include_router(orders.router)

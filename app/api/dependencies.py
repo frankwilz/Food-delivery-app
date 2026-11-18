@@ -1,14 +1,96 @@
-"""Dependencies shared by more than one router."""
+"""How every route gets its services, and who is signed in.
+
+Each repository is built from its data file path in one function below, and each service is built
+from repositories and other services through FastAPI dependencies. Routes ask for a service with
+`Depends(get_..._service)` and never open a data file or build a service themselves.
+
+File paths are read from `app.core.config` when a request arrives, not when this module is imported,
+so tests (and `DATA_DIR`) only need to change them in one place.
+"""
 
 from collections.abc import Callable
 
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.core.config import CUSTOMERS_FILE
+from app.core import config
+from app.repositories.cart_repository import CartRepository
 from app.repositories.customer_repository import CustomerRepository
+from app.repositories.menu_item_repository import MenuItemRepository
+from app.repositories.order_repository import OrderRepository
+from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.error import ErrorResponse
 from app.services.auth_service import AuthService, NotAuthenticatedError, RoleRequiredError
+from app.services.cart_service import CartService
+from app.services.checkout_service import CheckoutService
+from app.services.customer_service import CustomerService
+from app.services.menu_service import MenuService
+from app.services.order_service import OrderService
+from app.services.restaurant_service import RestaurantService
+
+# --- Repositories: the only place a data file path is turned into a repository ---
+
+
+def get_customer_repository() -> CustomerRepository:
+    return CustomerRepository(config.CUSTOMERS_FILE)
+
+
+def get_restaurant_repository() -> RestaurantRepository:
+    return RestaurantRepository(config.RESTAURANTS_FILE)
+
+
+def get_menu_item_repository() -> MenuItemRepository:
+    return MenuItemRepository(config.MENU_ITEMS_FILE)
+
+
+def get_cart_repository() -> CartRepository:
+    return CartRepository(config.CARTS_FILE)
+
+
+def get_order_repository() -> OrderRepository:
+    return OrderRepository(config.ORDERS_FILE)
+
+
+# --- Services: built from the repositories and services they need ---
+
+
+def get_customer_service(repository: CustomerRepository = Depends(get_customer_repository)) -> CustomerService:
+    return CustomerService(repository)
+
+
+def get_restaurant_service(repository: RestaurantRepository = Depends(get_restaurant_repository)) -> RestaurantService:
+    return RestaurantService(repository)
+
+
+def get_menu_service(
+    menu_items: MenuItemRepository = Depends(get_menu_item_repository),
+    restaurants: RestaurantRepository = Depends(get_restaurant_repository),
+) -> MenuService:
+    return MenuService(menu_items, restaurants)
+
+
+def get_cart_service(
+    carts: CartRepository = Depends(get_cart_repository),
+    menu_service: MenuService = Depends(get_menu_service),
+    customer_service: CustomerService = Depends(get_customer_service),
+) -> CartService:
+    return CartService(carts, menu_service, customer_service)
+
+
+def get_checkout_service(
+    customer_service: CustomerService = Depends(get_customer_service),
+    carts: CartRepository = Depends(get_cart_repository),
+    restaurants: RestaurantRepository = Depends(get_restaurant_repository),
+    cart_service: CartService = Depends(get_cart_service),
+    menu_service: MenuService = Depends(get_menu_service),
+    orders: OrderRepository = Depends(get_order_repository),
+) -> CheckoutService:
+    return CheckoutService(customer_service, carts, restaurants, cart_service, menu_service, orders)
+
+
+def get_order_service(orders: OrderRepository = Depends(get_order_repository)) -> OrderService:
+    return OrderService(orders)
+
 
 # Declares the "Bearer token" scheme in /docs, which adds the Authorize button.
 # auto_error=False lets a missing header reach get_current_customer, so every 401
@@ -19,8 +101,11 @@ bearer_scheme = HTTPBearer(
 )
 
 
-def get_auth_service() -> AuthService:
-    return AuthService(CustomerRepository(CUSTOMERS_FILE))
+def get_auth_service(repository: CustomerRepository = Depends(get_customer_repository)) -> AuthService:
+    return AuthService(repository)
+
+
+# --- Who is signed in ---
 
 
 def get_current_customer(

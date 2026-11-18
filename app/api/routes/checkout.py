@@ -1,24 +1,11 @@
 from fastapi import APIRouter, Depends, status
 
-from app.api.dependencies import get_current_customer
-from app.api.routes import cart as cart_route
+from app.api.dependencies import get_checkout_service, get_current_customer
 from app.schemas.order import Order
 from app.schemas.error import ErrorResponse
 from app.services.checkout_service import CheckoutService
 
 router = APIRouter(tags=["checkout"])
-
-
-def get_checkout_service() -> CheckoutService:
-    # Built from the cart route's builders, so both use the same data files
-    return CheckoutService(
-        cart_route.build_customer_service(),
-        cart_route.build_cart_repository(),
-        cart_route.build_restaurant_repository(),
-        cart_route.get_cart_service(),
-        cart_route.build_menu_service(),
-        cart_route.build_order_repository(),
-    )
 
 
 @router.post(

@@ -1,8 +1,6 @@
 from fastapi import APIRouter, Depends, status
 
-from app.api.dependencies import get_current_customer
-from app.core.config import CUSTOMERS_FILE
-from app.repositories.customer_repository import CustomerRepository
+from app.api.dependencies import get_current_customer, get_customer_service
 from app.schemas.customer import Customer, CustomerCreate, CustomerUpdate
 from app.schemas.error import ErrorResponse
 from app.services.customer_service import CustomerService
@@ -14,10 +12,6 @@ DEACTIVATED = {403: {"model": ErrorResponse, "description": "The customer accoun
 SIGNED_IN = {**NOT_SIGNED_IN, **DEACTIVATED}
 EMPTY_UPDATE = {400: {"model": ErrorResponse, "description": "The update body contained no fields"}}
 DUPLICATE_EMAIL = {409: {"model": ErrorResponse, "description": "An account with this email already exists"}}
-
-
-def get_customer_service() -> CustomerService:
-    return CustomerService(CustomerRepository(CUSTOMERS_FILE))
 
 
 @router.post(
