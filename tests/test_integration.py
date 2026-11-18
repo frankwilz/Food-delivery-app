@@ -147,7 +147,7 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
-def _request(method: str, url: str, body: dict | None = None, token: str | None = None) -> tuple[int, dict]:
+def _request(method: str, url: str, body: dict | None = None, token: str | None = None) -> tuple[int, dict | list]:
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"}
     if token is not None:
@@ -186,12 +186,19 @@ def _stop_server(process: subprocess.Popen) -> None:
     process.wait(timeout=10)
 
 
-def test_data_persists_after_server_restart(tmp_path):
+DATA_FILE_NAMES = ("restaurants.json", "menu_items.json", "customers.json", "carts.json", "orders.json")
+
+
+def _copy_server_data(tmp_path):
     data_dir = tmp_path / "server-data"
     data_dir.mkdir()
-    shutil.copy(BASE_DIR / "data" / "restaurants.json", data_dir / "restaurants.json")
-    shutil.copy(BASE_DIR / "data" / "menu_items.json", data_dir / "menu_items.json")
-    shutil.copy(BASE_DIR / "data" / "customers.json", data_dir / "customers.json")
+    for file_name in DATA_FILE_NAMES:
+        shutil.copy(BASE_DIR / "data" / file_name, data_dir / file_name)
+    return data_dir
+
+
+def test_data_persists_after_server_restart(tmp_path):
+    data_dir = _copy_server_data(tmp_path)
     committed = (BASE_DIR / "data" / "restaurants.json").read_text(encoding="utf-8")
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
@@ -231,3 +238,61 @@ def test_data_persists_after_server_restart(tmp_path):
 
     # The committed representative data was never touched
     assert (BASE_DIR / "data" / "restaurants.json").read_text(encoding="utf-8") == committed
+
+
+def test_customer_cart_and_order_persist_after_server_restarts(tmp_path):
+    """5.2: adapted from Zay Lin Myat's retained restart check in 96d7b74 (PR #86)."""
+    data_dir = _copy_server_data(tmp_path)
+    committed = {name: (BASE_DIR / "data" / name).read_bytes() for name in DATA_FILE_NAMES}
+    port = _free_port()
+    base = f"http://127.0.0.1:{port}"
+    account = {
+        "name": "Restart Customer",
+        "email": "restart.customer@example.com",
+        "password": "restart-demo-password",
+        "delivery_address": "99 Persistence Lane, Kelowna",
+    }
+
+    server = _start_server(data_dir, port)
+    try:
+        status, customer = _request("POST", f"{base}/customers", account)
+        assert status == 201
+        status, login = _request(
+            "POST", f"{base}/auth/login", {"email": account["email"], "password": account["password"]}
+        )
+        assert status == 200
+        token = login["access_token"]
+        assert _request("POST", f"{base}/cart/items", {"menu_item_id": 1, "quantity": 2}, token)[0] == 200
+        status, cart = _request("POST", f"{base}/cart/items", {"menu_item_id": 2, "quantity": 1}, token)
+        assert status == 200 and cart["total"] == 43.47
+    finally:
+        _stop_server(server)
+
+    # A new process must find the registered account and its still-filled cart through DATA_DIR.
+    server = _start_server(data_dir, port)
+    try:
+        assert _request("GET", f"{base}/customers/me", token=token) == (200, customer)
+        assert _request("GET", f"{base}/cart", token=token) == (200, cart)
+        status, order = _request("POST", f"{base}/checkout", token=token)
+        assert status == 201
+        assert (order["customer_id"], order["cart_id"], order["total"]) == (customer["id"], cart["id"], 43.47)
+        assert order["delivery_address"] == account["delivery_address"]
+    finally:
+        _stop_server(server)
+
+    # Another new process must find the same saved order and retire the original cart.
+    server = _start_server(data_dir, port)
+    try:
+        assert _request("GET", f"{base}/customers/me", token=token) == (200, customer)
+        assert _request("GET", f"{base}/orders/{order['id']}", token=token) == (200, order)
+        assert _request("GET", f"{base}/orders", token=token) == (200, [order])
+        status, fresh_cart = _request("GET", f"{base}/cart", token=token)
+        assert status == 200
+        assert fresh_cart["id"] != cart["id"] and fresh_cart["items"] == []
+        assert _request("POST", f"{base}/checkout", token=token)[0] == 400
+    finally:
+        _stop_server(server)
+
+    saved_carts = json.loads((data_dir / "carts.json").read_text(encoding="utf-8"))
+    assert next(row for row in saved_carts if row["id"] == cart["id"])["status"] == "checked_out"
+    assert {name: (BASE_DIR / "data" / name).read_bytes() for name in DATA_FILE_NAMES} == committed

@@ -28,6 +28,10 @@ def isolated_data(tmp_path, monkeypatch):
     for setting, file_name in DATA_FILES.items():
         shutil.copy(REAL_DATA / file_name, tmp_path / file_name)
         monkeypatch.setattr(config, setting, tmp_path / file_name)
+    # Most feature tests start before the customer's first cart/order. The workflow
+    # demo test explicitly opts into the representative history instead.
+    for file_name in ("carts.json", "orders.json"):
+        (tmp_path / file_name).write_text("[]\n", encoding="utf-8")
 
 
 @pytest.fixture

@@ -1,1 +1,46 @@
-[]
+[
+    {
+        "id": 1,
+        "customer_id": 2,
+        "restaurant_id": 1,
+        "items": [
+            {
+                "menu_item_id": 1,
+                "quantity": 1
+            },
+            {
+                "menu_item_id": 2,
+                "quantity": 2
+            }
+        ],
+        "status": "checked_out"
+    },
+    {
+        "id": 2,
+        "customer_id": 3,
+        "restaurant_id": 2,
+        "items": [
+            {
+                "menu_item_id": 4,
+                "quantity": 1
+            }
+        ],
+        "status": "checked_out"
+    },
+    {
+        "id": 3,
+        "customer_id": 2,
+        "restaurant_id": 2,
+        "items": [
+            {
+                "menu_item_id": 4,
+                "quantity": 2
+            },
+            {
+                "menu_item_id": 5,
+                "quantity": 1
+            }
+        ],
+        "status": "active"
+    }
+]
