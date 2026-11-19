@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Path
 
 from app.api.dependencies import get_cart_service, get_current_customer
 from app.schemas.cart import CartItemAdd, CartItemUpdate, CartResponse
@@ -63,7 +65,7 @@ def add_cart_item(
     responses={**SIGNED_IN, **NOT_IN_CART},
 )
 def update_cart_item(
-    menu_item_id: int,
+    menu_item_id: Annotated[int, Path(description="The menu item's identifier in the signed-in customer's cart.")],
     body: CartItemUpdate,
     customer: dict = Depends(get_current_customer),
     service: CartService = Depends(get_cart_service),
@@ -82,7 +84,7 @@ def update_cart_item(
     responses={**SIGNED_IN, **NOT_IN_CART},
 )
 def remove_cart_item(
-    menu_item_id: int,
+    menu_item_id: Annotated[int, Path(description="The menu item's identifier in the signed-in customer's cart.")],
     customer: dict = Depends(get_current_customer),
     service: CartService = Depends(get_cart_service),
 ):

@@ -2,11 +2,11 @@
 
 [![Tests](https://github.com/frankwilz/Food-delivery-app/actions/workflows/tests.yml/badge.svg)](https://github.com/frankwilz/Food-delivery-app/actions/workflows/tests.yml)
 
-Food Delivery App is a team project. Milestone 1 delivers the first vertical slice: a customer can list, search and filter restaurants, open a restaurant's details and browse its menu, and a restaurant manager can create and update restaurants and menu items. It consists of a FastAPI backend (route → service → repository → JSON), Pydantic request and response models, automated tests that run in GitHub Actions, and a basic web frontend that calls the API.
+Food Delivery App is a team project. Milestone 2 connects customer accounts, restaurant/menu browsing, a shopping cart, checkout and private order history through a FastAPI backend and browser frontend. Requests follow route → service → repository → JSON, with Pydantic request/response models and automated CI checks. The [M2 summary and demo script](docs/milestones/M2.md) records implementation evidence and remaining team/submission work; the [Decision Receipt M2.3](docs/decision-receipt-m2.md) explains the integration design.
 
 **Team name:** Abdul & Friends
 
-**Project board:** https://github.com/users/frankwilz/projects/2 (user stories #19–#24)
+**Project board:** https://github.com/users/frankwilz/projects/2
 
 ## Requirements
 
@@ -182,7 +182,7 @@ GET/POST /restaurants, GET/PATCH /restaurants/{restaurant_id}
 
 Each layer has one responsibility:
 
-- **Route:** Handles the HTTP endpoint, dependency creation, and response model.
+- **Route:** Handles the HTTP endpoint, requests shared dependencies, and declares request/response models.
 - **Service:** Holds the business rules: search/filter logic, 404 for unknown ids, no duplicate restaurant (same name **and** address, case-insensitive, so chains at different addresses are allowed), and no empty updates.
 - **Repository:** The only code that reads or writes the JSON file: `get_all`, `get_by_id`, `create`, `update`. New ids are `max(existing ids) + 1` and the id is never overwritten, so ids stay stable and menu items keep pointing at the right restaurant. Each save writes a temporary file and swaps it in with `os.replace`, so a crash cannot leave a half-written file.
 - **Persistence:** Stores restaurant data in `data/restaurants.json`.
@@ -319,11 +319,11 @@ Every error response is JSON with the shared `ErrorResponse` shape, `{"detail": 
 
 | Status | When |
 | --- | --- |
-| `400` | A `PATCH` body contains no fields. |
+| `400` | An empty profile/restaurant/menu update; a combined cart quantity above the limit; checkout without a filled active cart or with an invalid stored quantity. |
 | `401` | The login email or password is wrong, or a protected endpoint was called with a missing, invalid or expired token. The response includes a `WWW-Authenticate: Bearer` header. |
 | `403` | The account has been deactivated (at login with the correct password, and on every protected endpoint, including with a token issued before deactivation), or a customer called a manager-only endpoint. |
-| `404` | The restaurant or menu item does not exist, or the menu item belongs to another restaurant. |
-| `409` | A create or update would duplicate a restaurant (name + address), a menu item name at the same restaurant, or a customer email (case-insensitive). |
+| `404` | Missing restaurant/menu item, item not owned by the requested restaurant, item not in the cart, or missing/non-owned order. |
+| `409` | Duplicate restaurant/menu item/email; mixed-restaurant cart addition or checkout; unavailable/deactivated item; checkout with a closed restaurant, an unorderable item or a cart already saved as an order. |
 | `422` | Invalid input: a wrong type, a value out of range, a missing required field, an unknown or server-assigned field (`id`, `restaurant_id`), `null` in a `PATCH`, or malformed JSON. For `422` responses, `detail` is FastAPI's list of validation errors. |
 | `500` | A data file is missing, unreadable or corrupt. The client receives `{"detail": "Data storage error"}`, and the full error is written to the server log. |
 
@@ -377,6 +377,12 @@ Run the test suite from the repository root:
 python -m pytest -q
 ```
 
+Run the frontend HTTP/session and ordering tests with Node.js 22 or newer (Node is only needed for these tests, not to serve the frontend):
+
+```bash
+node --test tests/frontend/*.test.mjs
+```
+
 | File | Covers |
 | --- | --- |
 | `tests/test_health.py` | `GET /health`. |
@@ -384,12 +390,21 @@ python -m pytest -q
 | `tests/test_menu.py` | Menu endpoints, validation, duplicate names, availability, deactivation (soft delete), `get_orderable_item`, the repository, and committed data integrity. |
 | `tests/test_customers.py` | Customer registration, duplicate emails (case-insensitive), validation, password hashing, the repository and service, and committed data integrity. |
 | `tests/test_auth.py` | Login (valid, wrong password, unknown email, invalid body), tokens (expired, tampered, forged, malformed), `get_current_customer` (missing, invalid and expired tokens), and the `SECRET_KEY` setting. |
+| `tests/test_customer_update.py`, `tests/test_deactivation.py` | Profile changes, immutable/invalid fields, deactivation and invalidation of existing sessions. |
+| `tests/test_authorization.py` | Customer/manager permissions, 401/403 contracts, and ownership isolation. |
+| `tests/test_cart.py` | Active-cart lifecycle, one-restaurant and availability rules, quantities, pricing and persistence. |
+| `tests/test_checkout.py`, `tests/test_orders.py` | Checkout validation, current prices, save-before-close/recovery, immutable snapshots and private order reads. |
+| `tests/test_business_rules.py` | Business-rule documentation points to existing service methods and tests; the full rule table is supplied by the 5.3 fix. |
+| `tests/test_concurrency.py` | Concurrent JSON changes, unique IDs, active-cart creation and one order per cart within one server process. |
+| `tests/test_demo_scenarios.py`, `tests/test_regressions.py` | Full subsystem/demo scenarios and reproductions of the checkout/cart race fixed in PR #95; restored through the 5.8 PR. |
 | `tests/test_workflow.py` | Five-file data consistency, the seeded checkout demo, and a new customer's registration → login → browsing → cart → checkout → order retrieval. |
 | `tests/test_integration.py` | Restaurant/menu integration, error handling, API documentation, and real `uvicorn` restart tests, including a registered customer, filled cart and saved order across two restarts with the same `DATA_DIR`. |
+| `tests/frontend/api.test.mjs` | Registration/sign-in, bearer headers, API errors, session restore/isolation, stale responses and profile updates. |
+| `tests/frontend/shopping.test.mjs` | Cart edits/removal/clear, invalid quantity, checkout retry, saved-order rendering, stale responses and API-supplied totals. |
 
 **Isolated test data:** `tests/conftest.py` copies all five JSON files into a fresh temporary folder before **every** test and sets their paths in `app.core.config`. Feature tests start with empty carts/orders; the seeded workflow test explicitly restores the representative history in its temporary directory. Tests can create and update freely without changing the committed data or affecting each other. Restart tests use separate copies through `DATA_DIR`.
 
-**Continuous integration:** `.github/workflows/tests.yml` runs `pytest` with GitHub Actions on Python 3.11 and 3.13 for every pull request and every push to `main`. It then checks that `data/` was not modified. A pull request should only be merged when this check is green.
+**Continuous integration:** `.github/workflows/tests.yml` runs the Python suite on 3.11/3.13 and frontend tests on Node 22 for every push and PR. Python jobs also check that `data/` was not modified. This round requests Abdul138, EuReKaA99 and tayo-ak; each PR needs at least two teammate approvals and green checks before merging.
 
 ## Repository Structure
 
@@ -398,55 +413,83 @@ Food-delivery-app/
 ├── .github/workflows/tests.yml     # CI: runs pytest on every push and PR
 ├── app/
 │   ├── api/
-│   │   ├── dependencies.py         # get_current_customer (Bearer token -> customer)
+│   │   ├── dependencies.py         # shared repository/service construction and auth
 │   │   └── routes/
 │   │       ├── auth.py
+│   │       ├── cart.py
+│   │       ├── checkout.py
 │   │       ├── customers.py
 │   │       ├── menu.py
+│   │       ├── orders.py
 │   │       └── restaurants.py
 │   ├── core/
 │   │   ├── config.py               # DATA_DIR, data file paths, token settings
 │   │   ├── errors.py               # shared domain errors (401, 404, 409, ...)
 │   │   └── security.py             # salted password hashing, login tokens
 │   ├── repositories/
+│   │   ├── cart_repository.py
 │   │   ├── customer_repository.py
 │   │   ├── json_repository.py      # JsonRepository base: load, atomic save, next_id
 │   │   ├── menu_item_repository.py
+│   │   ├── order_repository.py
 │   │   └── restaurant_repository.py
 │   ├── schemas/
 │   │   ├── auth.py
+│   │   ├── cart.py
 │   │   ├── customer.py
 │   │   ├── error.py
 │   │   ├── health.py
 │   │   ├── menu_item.py
+│   │   ├── order.py
 │   │   └── restaurant.py
 │   ├── services/
 │   │   ├── auth_service.py
+│   │   ├── cart_service.py
+│   │   ├── checkout_service.py
 │   │   ├── customer_service.py
 │   │   ├── menu_service.py
+│   │   ├── order_service.py
+│   │   ├── pricing.py
 │   │   └── restaurant_service.py
 │   └── main.py                     # app, /health, error handlers, CORS
 ├── data/
+│   ├── carts.json
 │   ├── customers.json
 │   ├── menu_items.json
+│   ├── orders.json
 │   └── restaurants.json
 ├── docs/
-│   └── PROVENANCE.md
+│   ├── PROVENANCE.md
+│   ├── decision-receipt-m2.md
+│   └── milestones/M2.md
 ├── frontend/
 │   ├── index.html                  # page markup
-│   ├── index.js                    # restaurant list, details, menu, create form
+│   ├── index.js                    # navigation, restaurant browsing and manager form
+│   ├── api.mjs                     # HTTP, token/session state and backend errors
+│   ├── account.mjs                 # registration, sign-in and account forms
+│   ├── shopping.mjs                # menu/cart actions, checkout and order views
+│   ├── shopping.css
 │   └── styles.css                  # page styles
 ├── scrum/
 │   ├── sprint-planning-m1.md
+│   ├── sprint-planning-m2.md
 │   └── team-agreement.md
 ├── tests/
 │   ├── conftest.py                 # isolated temporary data for every test
 │   ├── test_auth.py
+│   ├── test_authorization.py
+│   ├── test_cart.py
+│   ├── test_checkout.py
+│   ├── test_customer_update.py
 │   ├── test_customers.py
+│   ├── test_deactivation.py
 │   ├── test_health.py
 │   ├── test_integration.py
 │   ├── test_menu.py
-│   └── test_restaurants.py
+│   ├── test_orders.py
+│   ├── test_restaurants.py
+│   ├── test_workflow.py
+│   └── frontend/                   # Node built-in tests; no npm install required
 ├── README.md
 └── requirements.txt
 ```
