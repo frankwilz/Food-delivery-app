@@ -1,35 +1,22 @@
+import { createApiClient } from "./api.mjs";
+import { createAccountViews } from "./account.mjs";
+
 const $ = (id) => document.getElementById(id);
 const app = $("app");
 const state = { restaurants: null, cuisine: "All", query: "" };
-
-const api = (path) => $("apiBase").value.replace(/\/$/, "") + path;
-
-// Adding or editing restaurants needs a manager's token (POST /auth/login as a manager).
-// Until the sign-in page exists (5.4), it can be pasted into the footer field.
-function withToken(options = {}) {
-  const token = $("managerToken").value.trim();
-  if (!token) return options;
-  return { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + token } };
-}
-
-async function request(path, options) {
-  const res = await fetch(api(path), withToken(options));
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = await res.json();
-      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-    } catch (_) {}
-    throw new Error(res.status + " " + detail);
-  }
-  return res.json();
-}
+let sessionStorageForAPI = null;
+try { sessionStorageForAPI = window.sessionStorage; } catch (_) { /* Session works without persistence. */ }
+const client = createApiClient({ baseURL: $("apiBase").value, storage: sessionStorageForAPI });
+const request = (path, options) => client.request(path, options);
+let routeVersion = 0;
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   Object.entries(props).forEach(([k, v]) => {
+    if (v === undefined || v === null) return;
     if (k === "style") node.style.cssText = v;
     else if (k === "class") node.className = v;
+    else if (k.startsWith("aria-") || k.startsWith("data-") || k === "role") node.setAttribute(k, v);
     else node[k] = v;
   });
   children.flat().forEach((c) => node.append(c instanceof Node ? c : document.createTextNode(c)));
@@ -104,16 +91,18 @@ function renderChips() {
   });
 }
 
-async function showHome() {
+async function showHome(viewVersion) {
   $("searchWrap").hidden = false;
   app.textContent = "";
   app.append(el("h1", {}, "Restaurants near you"), el("div", { class: "chips", id: "chips" }), el("div", { id: "gridHolder" }));
   $("gridHolder").append(el("div", { class: "grid" }, [1, 2, 3, 4, 5, 6].map(() => el("div", { class: "skeleton" }))));
   try {
     if (!state.restaurants) await loadRestaurants();
+    if (viewVersion !== routeVersion) return;
     renderChips();
     renderGrid();
   } catch (err) {
+    if (viewVersion !== routeVersion || err.code === "SESSION_CHANGED") return;
     $("gridHolder").textContent = "";
     $("gridHolder").append(el("div", { class: "state error" },
       "Could not load restaurants (" + err.message + "). Check that the backend is running and the API address below is right."));
@@ -121,14 +110,16 @@ async function showHome() {
 }
 
 // ---------- Restaurant page ----------
-async function showDetail(id) {
+async function showDetail(id, viewVersion) {
   $("searchWrap").hidden = true;
   app.textContent = "";
   app.append(el("a", { class: "back", href: "#/" }, "\u2190 All restaurants"), el("div", { class: "skeleton", style: "height:300px" }));
   let r;
   try {
     r = await request("/restaurants/" + id);
+    if (viewVersion !== routeVersion) return;
   } catch (err) {
+    if (viewVersion !== routeVersion || err.code === "SESSION_CHANGED") return;
     app.textContent = "";
     app.append(el("a", { class: "back", href: "#/" }, "\u2190 All restaurants"),
       el("div", { class: "state error" }, err.message.startsWith("404")
@@ -153,6 +144,7 @@ async function showDetail(id) {
     menuHolder);
   try {
     const items = await request("/restaurants/" + id + "/menu");
+    if (viewVersion !== routeVersion) return;
     menuHolder.textContent = "";
     if (!items.length) {
       menuHolder.append(el("div", { class: "state" }, "This restaurant hasn't added any menu items yet."));
@@ -168,26 +160,49 @@ async function showDetail(id) {
           el("div", { class: "mprice" }, money(m.price))))));
     });
   } catch (err) {
+    if (viewVersion !== routeVersion || err.code === "SESSION_CHANGED") return;
     menuHolder.textContent = "";
     menuHolder.append(el("div", { class: "state error" }, "Could not load the menu (" + err.message + ")."));
   }
 }
 
 // ---------- Routing ----------
+const accountViews = createAccountViews({ app, el, client, onSignedIn: () => { location.hash = "#/"; } });
 function route() {
+  const viewVersion = ++routeVersion;
   const m = location.hash.match(/^#\/restaurant\/(\d+)/);
-  if (m) showDetail(m[1]); else showHome();
+  $("searchWrap").hidden = !(!location.hash || location.hash === "#/");
+  if (location.hash === "#/signin") accountViews.showAuth("signin");
+  else if (location.hash === "#/register") accountViews.showAuth("register");
+  else if (location.hash === "#/account") accountViews.showAccount();
+  else if (m) showDetail(m[1], viewVersion);
+  else showHome(viewVersion);
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", route);
 
 // ---------- Search ----------
 $("search").addEventListener("input", (e) => { state.query = e.target.value; renderGrid(); });
-$("apiBase").addEventListener("change", () => { state.restaurants = null; route(); });
+$("apiBase").addEventListener("change", () => {
+  try {
+    client.setBaseURL($("apiBase").value);
+    $("apiBase").value = client.snapshot().baseURL;
+    $("apiMsg").textContent = "";
+    state.restaurants = null;
+    route();
+  } catch (err) {
+    $("apiMsg").textContent = err.message;
+    $("apiBase").value = client.snapshot().baseURL;
+  }
+});
 
 // ---------- Create restaurant ----------
 const dialog = $("createDialog");
-$("openCreate").addEventListener("click", () => { $("formMsg").textContent = ""; dialog.showModal(); });
+$("openCreate").addEventListener("click", () => {
+  if (client.snapshot().user?.role !== "manager") return;
+  $("formMsg").textContent = "";
+  dialog.showModal();
+});
 $("cancelCreate").addEventListener("click", () => dialog.close());
 
 function toast(text) {
@@ -225,4 +240,32 @@ $("createForm").addEventListener("submit", async (e) => {
   }
 });
 
-route();
+let previousUserId = null;
+let previousLoading = false;
+client.subscribe(({ user, loading, error }) => {
+  $("openCreate").hidden = !user || user.role !== "manager";
+  if (!user && dialog.open) dialog.close();
+  const nav = $("sessionNav");
+  nav.textContent = "";
+  if (user) {
+    const signout = el("button", { class: "btn ghost", type: "button" }, "Sign out");
+    signout.addEventListener("click", () => {
+      client.logout();
+      if (location.hash === "#/") route(); else location.hash = "#/";
+      toast("Signed out");
+    });
+    nav.append(el("a", { class: "account-link", href: "#/account" }, user.name), signout);
+  } else if (!loading) {
+    nav.append(el("a", { class: "btn ghost", href: "#/signin" }, "Sign in"),
+      el("a", { class: "btn", href: "#/register" }, "Register"));
+  }
+  $("sessionStatus").textContent = loading ? "Checking your sign-in…" : error;
+  const identityChanged = previousUserId !== (user?.id ?? null);
+  const restored = previousLoading && !loading;
+  previousUserId = user?.id ?? null;
+  previousLoading = loading;
+  if (location.hash === "#/account" && (identityChanged || restored)) route();
+});
+
+app.append(el("div", { class: "state", role: "status" }, "Loading Food Delivery…"));
+client.restore().catch(() => { /* The session status contains the API error. */ }).finally(route);
