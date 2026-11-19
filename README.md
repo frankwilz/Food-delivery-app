@@ -58,7 +58,7 @@ The API is available at `http://127.0.0.1:8000` by default. Stop the server with
 
 ## Run the Frontend
 
-The frontend is a single page that calls the REST API with `fetch`, split into `frontend/index.html` (markup), `frontend/styles.css` (styles) and `frontend/index.js` (behavior). It has no build step and no extra dependencies.
+The frontend is a single page that calls the REST API with `fetch`. `index.js` handles browsing/navigation, `api.mjs` handles HTTP/session state, `account.mjs` renders account forms, and `shopping.mjs` renders ordering views. It has no build step or third-party JavaScript dependencies.
 
 1. Start the backend as shown above, on port `8000`.
 2. In a **second terminal**, serve the frontend from the repository root on port `5500`:
@@ -70,6 +70,17 @@ The frontend is a single page that calls the REST API with `fetch`, split into `
 3. Open **http://127.0.0.1:5500** in a browser.
 
 The page must be served on port `5500`, either from `localhost` or `127.0.0.1`. The backend only accepts cross-origin requests from those two origins (`CORSMiddleware` in `app/main.py`). Opening `index.html` directly from the file system, or serving it on another port, fails with "Could not load restaurants". VS Code's Live Server extension also uses port 5500 by default. If the API runs somewhere else, change the **API address** field at the bottom of the page.
+
+### Customer workflow in the browser
+
+1. Click **Register**, enter your details and delivery address, and create an account. Registration signs you in automatically. Existing accounts use **Sign in**; the demo credentials are listed under [Representative Data](#representative-data).
+2. Your name appears in the header. Click it to update your name, email or delivery address. The **Add restaurant** button appears only for a signed-in manager.
+3. Open a restaurant, choose a quantity and click **Add to cart**. Unavailable menu items are marked. A mixed-restaurant API error is displayed beside the item without replacing your existing cart.
+4. Open **Cart** to update quantities, remove items or clear the cart. Item prices, line totals, subtotal and total come from API responses.
+5. Check the delivery address and click **Place order**. The confirmation shows the saved items, prices, total, address and status. **My orders** opens your order history and saved details.
+6. Refresh to restore your session and retrieve the saved data. **Sign out** removes the token from this browser tab; changing the API address also signs you out. Expired or deactivated sessions show the API's error and require signing in again.
+
+Only the token is retained in `sessionStorage`, keyed by API address; profiles are fetched from `/customers/me`. Passwords are not persisted. The backend enforces ownership and roles on every protected request. Use a temporary `DATA_DIR` for browser demos as shown below.
 
 ### Showcase the vertical slice
 
@@ -88,7 +99,7 @@ Then walk through **Restaurant List → Search / Filter → Restaurant Details �
 | Search / filter | Type in the search box (name, cuisine or address), or click a cuisine chip | Filters the loaded list in the browser |
 | Restaurant details | Click a card | `GET /restaurants/{id}` |
 | Menu and menu items | The details page lists the menu, grouped by category, with prices | `GET /restaurants/{id}/menu` |
-| Create a restaurant | Log in as the manager in `/docs` (`POST /auth/login` with `dev.patel@example.com`), paste the `access_token` into **Manager token** at the bottom of the page, then click **Add restaurant**, fill in the form and click **Create restaurant**. Without a manager token the form shows the 401 or 403 error. | `POST /restaurants` |
+| Create a restaurant | Sign in as `dev.patel@example.com` using its demo password, click **Add restaurant**, fill in the form and click **Create restaurant**. Customers do not see the manager button; the backend also rejects unauthorized mutations. | `POST /restaurants` |
 | Unknown restaurant | Go to `http://127.0.0.1:5500/#/restaurant/999` | `GET /restaurants/999` → 404, shown as "That restaurant doesn't exist" |
 | Validation error | Create a restaurant with the same name and address as an existing one | `POST /restaurants` → 409, shown in the form |
 
