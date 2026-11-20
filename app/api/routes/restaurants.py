@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.api.dependencies import MANAGER_ONLY, get_restaurant_service, require_manager
 from app.schemas.error import ErrorResponse
@@ -39,7 +41,10 @@ def list_restaurants(
     description="Returns the details of a single restaurant.",
     responses=NOT_FOUND,
 )
-def get_restaurant(restaurant_id: int, service: RestaurantService = Depends(get_restaurant_service)):
+def get_restaurant(
+    restaurant_id: Annotated[int, Path(description="The stable identifier of the restaurant.")],
+    service: RestaurantService = Depends(get_restaurant_service),
+):
     return service.get_restaurant(restaurant_id)
 
 
@@ -73,7 +78,7 @@ def create_restaurant(restaurant: RestaurantCreate, service: RestaurantService =
     dependencies=[Depends(require_manager)],
 )
 def update_restaurant(
-    restaurant_id: int,
+    restaurant_id: Annotated[int, Path(description="The stable identifier of the restaurant.")],
     changes: RestaurantUpdate,
     service: RestaurantService = Depends(get_restaurant_service),
 ):
