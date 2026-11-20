@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.core.errors import BadRequestError, ConflictError, RestaurantNotFoundError
 from app.repositories.cart_repository import CartRepository
+from app.repositories.json_repository import transaction
 from app.repositories.order_repository import OrderRepository
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.cart import MAX_QUANTITY
@@ -43,6 +44,10 @@ class CheckoutService:
     4.3: the order's lines and totals come from `price_lines`, the same function the cart uses.
     4.4: the order is built from those totals plus snapshots, and saved.
     4.5: only after the order is saved is the cart closed (`CartService.mark_checked_out`).
+
+    The whole checkout holds the carts and orders locks (`transaction`), so a double-clicked
+    "Place order" makes one order: the second request waits, then finds the cart already closed.
+    No cart change can slip in between the checks and the save either.
     """
 
     def __init__(
@@ -63,19 +68,20 @@ class CheckoutService:
 
     def checkout(self, customer_id: int) -> dict:
         """Check the cart, then build and save the order, and return it."""
-        customer, cart, menu_items = self.prepare(customer_id)
+        with transaction(self.cart_repository, self.order_repository):
+            customer, cart, menu_items = self.prepare(customer_id)
 
-        # Each cart becomes at most one order. This only finds one if an earlier checkout saved the
-        # order but failed before closing the cart, so finish that job instead of ordering twice.
-        existing = self.order_repository.get_by_cart_id(cart["id"])
-        if existing is not None:
+            # Each cart becomes at most one order. This only finds one if an earlier checkout saved the
+            # order but failed before closing the cart, so finish that job instead of ordering twice.
+            existing = self.order_repository.get_by_cart_id(cart["id"])
+            if existing is not None:
+                self.cart_service.mark_checked_out(cart["id"])
+                raise CartAlreadyCheckedOutError(cart["id"], existing["id"])
+
+            # Save first: if saving fails, the cart is untouched and the customer can simply try again
+            order = self.order_repository.create(self.build_order(customer, cart, menu_items))
             self.cart_service.mark_checked_out(cart["id"])
-            raise CartAlreadyCheckedOutError(cart["id"], existing["id"])
-
-        # Save first: if saving fails, the cart is untouched and the customer can simply try again
-        order = self.order_repository.create(self.build_order(customer, cart, menu_items))
-        self.cart_service.mark_checked_out(cart["id"])
-        return order
+            return order
 
     def build_order(self, customer: dict, cart: dict, menu_items: list[dict]) -> dict:
         """The order record to save. Nothing in it refers back to live data that could change it later."""

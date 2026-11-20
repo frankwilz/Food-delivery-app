@@ -1,5 +1,6 @@
 from app.core.errors import BadRequestError, ConflictError, NotFoundError
 from app.repositories.cart_repository import CartRepository
+from app.repositories.json_repository import transaction
 from app.schemas.cart import MAX_QUANTITY, CartItemAdd
 from app.services.customer_service import CustomerService
 from app.services.menu_service import MenuItemNotOrderableError, MenuService
@@ -31,6 +32,9 @@ class CartService:
 
     Every public method takes the customer id and first checks the customer is active
     (`CustomerService.get_active_customer`), so a deactivated customer gets a 403.
+
+    Every change reads the cart, changes it and saves it inside `transaction(self.cart_repository)`,
+    so two requests at once (e.g. a double-clicked "Add") cannot overwrite each other's change.
     """
 
     def __init__(
@@ -48,13 +52,15 @@ class CartService:
     def get_or_create_active_cart(self, customer_id: int) -> dict:
         """Return the customer's stored active cart, creating an empty one if they have none."""
         self.customer_service.get_active_customer(customer_id)
-        cart = self.cart_repository.get_active_for_customer(customer_id)
-        if cart is None:
-            # Only created when none exists, so a customer never has two active carts
-            cart = self.cart_repository.create(
-                {"customer_id": customer_id, "restaurant_id": None, "items": [], "status": "active"}
-            )
-        return cart
+        # Locked, so two first requests at once cannot both find no cart and create two
+        with transaction(self.cart_repository):
+            cart = self.cart_repository.get_active_for_customer(customer_id)
+            if cart is None:
+                # Only created when none exists, so a customer never has two active carts
+                cart = self.cart_repository.create(
+                    {"customer_id": customer_id, "restaurant_id": None, "items": [], "status": "active"}
+                )
+            return cart
 
     def get_cart(self, customer_id: int) -> dict:
         return self.priced(self.get_or_create_active_cart(customer_id))
@@ -62,53 +68,59 @@ class CartService:
     # --- 3.3 Add items ---
 
     def add_item(self, customer_id: int, data: CartItemAdd) -> dict:
-        cart = self.get_or_create_active_cart(customer_id)
-        # 404 if the item does not exist, 409 if it is deactivated or unavailable
-        item = self.menu_service.get_orderable_item(data.menu_item_id)
-        if cart["items"] and cart["restaurant_id"] != item["restaurant_id"]:
-            raise DifferentRestaurantError(item, cart["restaurant_id"])
+        with transaction(self.cart_repository):
+            cart = self.get_or_create_active_cart(customer_id)
+            # 404 if the item does not exist, 409 if it is deactivated or unavailable
+            item = self.menu_service.get_orderable_item(data.menu_item_id)
+            if cart["items"] and cart["restaurant_id"] != item["restaurant_id"]:
+                raise DifferentRestaurantError(item, cart["restaurant_id"])
 
-        items = [dict(line) for line in cart["items"]]
-        existing = next((line for line in items if line["menu_item_id"] == item["id"]), None)
-        if existing is None:
-            items.append({"menu_item_id": item["id"], "quantity": data.quantity})
-        else:
-            new_quantity = existing["quantity"] + data.quantity
-            if new_quantity > MAX_QUANTITY:
-                raise QuantityLimitError(item["id"], new_quantity)
-            existing["quantity"] = new_quantity
+            items = [dict(line) for line in cart["items"]]
+            existing = next((line for line in items if line["menu_item_id"] == item["id"]), None)
+            if existing is None:
+                items.append({"menu_item_id": item["id"], "quantity": data.quantity})
+            else:
+                new_quantity = existing["quantity"] + data.quantity
+                if new_quantity > MAX_QUANTITY:
+                    raise QuantityLimitError(item["id"], new_quantity)
+                existing["quantity"] = new_quantity
 
-        # The first item decides which restaurant the cart belongs to
-        cart = self.cart_repository.update(cart["id"], {"items": items, "restaurant_id": item["restaurant_id"]})
+            # The first item decides which restaurant the cart belongs to
+            cart = self.cart_repository.update(cart["id"], {"items": items, "restaurant_id": item["restaurant_id"]})
         return self.priced(cart)
 
     # --- 3.4 Update quantities ---
 
     def update_quantity(self, customer_id: int, menu_item_id: int, quantity: int) -> dict:
-        cart = self.get_or_create_active_cart(customer_id)
-        items = [dict(line) for line in cart["items"]]
-        line = next((line for line in items if line["menu_item_id"] == menu_item_id), None)
-        if line is None:
-            raise ItemNotInCartError(menu_item_id)
-        line["quantity"] = quantity
-        return self.priced(self.cart_repository.update(cart["id"], {"items": items}))
+        with transaction(self.cart_repository):
+            cart = self.get_or_create_active_cart(customer_id)
+            items = [dict(line) for line in cart["items"]]
+            line = next((line for line in items if line["menu_item_id"] == menu_item_id), None)
+            if line is None:
+                raise ItemNotInCartError(menu_item_id)
+            line["quantity"] = quantity
+            cart = self.cart_repository.update(cart["id"], {"items": items})
+        return self.priced(cart)
 
     # --- 3.5 Remove items and clear ---
 
     def remove_item(self, customer_id: int, menu_item_id: int) -> dict:
-        cart = self.get_or_create_active_cart(customer_id)
-        items = [line for line in cart["items"] if line["menu_item_id"] != menu_item_id]
-        if len(items) == len(cart["items"]):
-            raise ItemNotInCartError(menu_item_id)
-        changes = {"items": items}
-        if not items:
-            # An empty cart is no longer tied to a restaurant
-            changes["restaurant_id"] = None
-        return self.priced(self.cart_repository.update(cart["id"], changes))
+        with transaction(self.cart_repository):
+            cart = self.get_or_create_active_cart(customer_id)
+            items = [line for line in cart["items"] if line["menu_item_id"] != menu_item_id]
+            if len(items) == len(cart["items"]):
+                raise ItemNotInCartError(menu_item_id)
+            changes = {"items": items}
+            if not items:
+                # An empty cart is no longer tied to a restaurant
+                changes["restaurant_id"] = None
+            cart = self.cart_repository.update(cart["id"], changes)
+        return self.priced(cart)
 
     def clear_for_customer(self, customer_id: int) -> dict:
-        cart = self.get_or_create_active_cart(customer_id)
-        return self.priced(self.clear(cart["id"]))
+        with transaction(self.cart_repository):
+            cart = self.clear(self.get_or_create_active_cart(customer_id)["id"])
+        return self.priced(cart)
 
     def clear(self, cart_id: int) -> dict:
         """Empty a cart and untie it from its restaurant. Checkout calls this after saving an order (4.5)."""

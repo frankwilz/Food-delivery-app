@@ -1,4 +1,5 @@
 from app.core.errors import ConflictError, EmptyUpdateError, RestaurantNotFoundError
+from app.repositories.json_repository import transaction
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.restaurant import RestaurantCreate, RestaurantUpdate
 
@@ -51,21 +52,24 @@ class RestaurantService:
         return restaurant
 
     def create_restaurant(self, data: RestaurantCreate) -> dict:
-        self._ensure_not_duplicate(data.name, data.address)
-        return self.repository.create(data.model_dump())
+        # The duplicate check and the save are one step, so two identical requests cannot both create
+        with transaction(self.repository):
+            self._ensure_not_duplicate(data.name, data.address)
+            return self.repository.create(data.model_dump())
 
     def update_restaurant(self, restaurant_id: int, changes: RestaurantUpdate) -> dict:
         fields = changes.model_dump(exclude_unset=True)
         if not fields:
             raise EmptyUpdateError()
-        current = self.get_restaurant(restaurant_id)
-        if "name" in fields or "address" in fields:
-            self._ensure_not_duplicate(
-                fields.get("name", current["name"]),
-                fields.get("address", current["address"]),
-                ignore_id=restaurant_id,
-            )
-        return self.repository.update(restaurant_id, fields)
+        with transaction(self.repository):
+            current = self.get_restaurant(restaurant_id)
+            if "name" in fields or "address" in fields:
+                self._ensure_not_duplicate(
+                    fields.get("name", current["name"]),
+                    fields.get("address", current["address"]),
+                    ignore_id=restaurant_id,
+                )
+            return self.repository.update(restaurant_id, fields)
 
     def _ensure_not_duplicate(self, name: str, address: str, ignore_id: int | None = None) -> None:
         # Same name at a different address is allowed (chains); same name AND address is a duplicate

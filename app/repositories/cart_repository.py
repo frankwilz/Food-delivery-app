@@ -17,18 +17,20 @@ class CartRepository(JsonRepository):
         return None
 
     def create(self, cart_data: dict) -> dict:
-        carts = self.get_all()
-        new_cart = {"id": self.next_id(carts), **cart_data}
-        carts.append(new_cart)
-        self.save(carts)
-        return new_cart
+        with self.lock:
+            carts = self.get_all()
+            new_cart = {"id": self.next_id(carts), **cart_data}
+            carts.append(new_cart)
+            self.save(carts)
+            return new_cart
 
     def update(self, cart_id: int, changes: dict) -> dict | None:
-        carts = self.get_all()
-        for cart in carts:
-            if cart["id"] == cart_id:
-                # The id and owner are never overwritten
-                cart.update({k: v for k, v in changes.items() if k not in ("id", "customer_id")})
-                self.save(carts)
-                return cart
-        return None
+        with self.lock:
+            carts = self.get_all()
+            for cart in carts:
+                if cart["id"] == cart_id:
+                    # The id and owner are never overwritten
+                    cart.update({k: v for k, v in changes.items() if k not in ("id", "customer_id")})
+                    self.save(carts)
+                    return cart
+            return None

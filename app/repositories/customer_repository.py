@@ -19,20 +19,22 @@ class CustomerRepository(JsonRepository):
         return None
 
     def create(self, customer_data: dict) -> dict:
-        customers = self.get_all()
-        # The new record is only appended; existing customers are never overwritten
-        new_customer = {"id": self.next_id(customers), **customer_data}
-        customers.append(new_customer)
-        self.save(customers)
-        return new_customer
+        with self.lock:
+            customers = self.get_all()
+            # The new record is only appended; existing customers are never overwritten
+            new_customer = {"id": self.next_id(customers), **customer_data}
+            customers.append(new_customer)
+            self.save(customers)
+            return new_customer
 
     def update(self, customer_id: int, changes: dict) -> dict | None:
-        customers = self.get_all()
-        for customer in customers:
-            if customer["id"] == customer_id:
-                # The id is never overwritten, so carts and orders keep pointing at the right customer.
-                # Which other fields may change is decided by CustomerService, not here.
-                customer.update({key: value for key, value in changes.items() if key != "id"})
-                self.save(customers)
-                return customer
-        return None
+        with self.lock:
+            customers = self.get_all()
+            for customer in customers:
+                if customer["id"] == customer_id:
+                    # The id is never overwritten, so carts and orders keep pointing at the right customer.
+                    # Which other fields may change is decided by CustomerService, not here.
+                    customer.update({key: value for key, value in changes.items() if key != "id"})
+                    self.save(customers)
+                    return customer
+            return None
