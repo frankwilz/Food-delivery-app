@@ -4,71 +4,21 @@ Adapted from Zay Lin Myat's retained implementation in commit 96d7b74 (closed PR
 These checks exercise API behavior and persisted relationships, without depending on route internals.
 """
 
-import json
 import shutil
-from decimal import Decimal
 
 import pytest
+from data_consistency import load_and_check
 
 from app.core.config import BASE_DIR
-from app.schemas.cart import MAX_QUANTITY, Cart
-from app.schemas.customer import Customer
-from app.schemas.menu_item import MenuItem
-from app.schemas.order import Order
-from app.schemas.restaurant import Restaurant
 
 DATA = BASE_DIR / "data"
-SCHEMAS = {
-    "restaurants": Restaurant,
-    "menu_items": MenuItem,
-    "customers": Customer,
-    "carts": Cart,
-    "orders": Order,
-}
 
 
 def test_representative_data_has_valid_relationships_and_totals():
-    data = {}
-    for name, schema in SCHEMAS.items():
-        records = json.loads((DATA / f"{name}.json").read_text(encoding="utf-8"))
-        assert records, name
-        assert len({record["id"] for record in records}) == len(records), name
-        for record in records:
-            schema.model_validate(record)
-        data[name] = {record["id"]: record for record in records}
-
-    for item in data["menu_items"].values():
-        assert item["restaurant_id"] in data["restaurants"]
-
-    active_customers = []
-    for cart in data["carts"].values():
-        assert cart["customer_id"] in data["customers"]
-        if cart["status"] == "active":
-            active_customers.append(cart["customer_id"])
-        assert cart["restaurant_id"] in data["restaurants"] if cart["items"] else cart["restaurant_id"] is None
-        for line in cart["items"]:
-            assert set(line) == {"menu_item_id", "quantity"}  # Prices belong to the menu or order snapshot.
-            assert type(line["quantity"]) is int and 1 <= line["quantity"] <= MAX_QUANTITY
-            assert data["menu_items"][line["menu_item_id"]]["restaurant_id"] == cart["restaurant_id"]
-    assert len(active_customers) == len(set(active_customers))
-
-    ordered_carts = []
-    for order in data["orders"].values():
-        assert order["customer_id"] in data["customers"]
-        assert order["restaurant_id"] in data["restaurants"]
-        cart = data["carts"][order["cart_id"]]
-        ordered_carts.append(cart["id"])
-        assert cart["status"] == "checked_out"
-        assert (cart["customer_id"], cart["restaurant_id"]) == (order["customer_id"], order["restaurant_id"])
-        assert [(line["menu_item_id"], line["quantity"]) for line in order["items"]] == [
-            (line["menu_item_id"], line["quantity"]) for line in cart["items"]
-        ]
-        for line in order["items"]:
-            assert data["menu_items"][line["menu_item_id"]]["restaurant_id"] == order["restaurant_id"]
-            assert Decimal(str(line["unit_price"])) * line["quantity"] == Decimal(str(line["line_total"]))
-        total = sum(Decimal(str(line["line_total"])) for line in order["items"])
-        assert total == Decimal(str(order["subtotal"])) == Decimal(str(order["total"]))
-    assert len(ordered_carts) == len(set(ordered_carts))
+    # All five committed files: schemas, unique ids, links between records, and order totals
+    data = load_and_check(DATA)
+    for name, records in data.items():
+        assert records, f"{name}.json has no representative records"
 
 
 @pytest.fixture
