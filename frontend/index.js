@@ -38,6 +38,7 @@ const bannerStyle = (cuisine) => {
   const h = hueFor(cuisine);
   return `background: linear-gradient(135deg, hsl(${h} 75% 90%), hsl(${h} 65% 78%));`;
 };
+const isManager = () => client.snapshot().user?.role === "manager";
 const money = (p) => (typeof p === "number" ? "$" + p.toFixed(2) : String(p ?? ""));
 
 function banner(r, extraClass = "") {
@@ -128,6 +129,9 @@ async function showDetail(id, viewVersion) {
     return;
   }
   const menuHolder = el("div", {}, el("div", { class: "skeleton", style: "height:100px" }));
+  const addItemBtn = el("button", { class: "btn", type: "button", id: "openMenuCreate" }, "Add menu item");
+  addItemBtn.hidden = !isManager();
+  addItemBtn.addEventListener("click", () => openMenuDialog(r.id));
   app.textContent = "";
   app.append(
     el("a", { class: "back", href: "#/" }, "\u2190 All restaurants"),
@@ -140,11 +144,12 @@ async function showDetail(id, viewVersion) {
           el("span", {}, r.cuisine),
           el("span", {}, r.address),
           el("span", {}, r.is_open ? "Open now" : "Closed right now")))),
-    el("h2", {}, "Menu"),
+    el("div", { class: "section-head" }, el("h2", {}, "Menu"), addItemBtn),
     menuHolder);
   try {
     const items = await request("/restaurants/" + id + "/menu");
     if (viewVersion !== routeVersion) return;
+    menuCategories = [...new Set(items.map((m) => m.category).filter(Boolean))];
     menuHolder.textContent = "";
     if (!items.length) {
       menuHolder.append(el("div", { class: "state" }, "This restaurant hasn't added any menu items yet."));
@@ -240,11 +245,59 @@ $("createForm").addEventListener("submit", async (e) => {
   }
 });
 
+// ---------- Add menu item ----------
+const menuDialog = $("menuDialog");
+let menuRestaurantId = null;
+let menuCategories = [];
+
+function openMenuDialog(restaurantId) {
+  if (!isManager()) return;
+  menuRestaurantId = restaurantId;
+  $("menuForm").reset();
+  $("menuMsg").className = "form-msg";
+  $("menuMsg").textContent = "";
+  // Suggest the restaurant's existing categories so new items join the right group
+  const list = $("menuCategories");
+  list.textContent = "";
+  menuCategories.forEach((c) => list.append(el("option", { value: c })));
+  menuDialog.showModal();
+}
+$("cancelMenu").addEventListener("click", () => menuDialog.close());
+
+$("menuForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = $("menuMsg");
+  msg.className = "form-msg"; msg.textContent = "Saving...";
+  const f = e.target.elements;
+  const body = {
+    name: f.name.value.trim(),
+    category: f.category.value.trim(),
+    price: parseFloat(f.price.value),
+    description: f.description.value.trim(),
+    is_available: f.is_available.checked,
+  };
+  try {
+    const created = await request("/restaurants/" + menuRestaurantId + "/menu", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    menuDialog.close();
+    toast("Added " + created.name + " to the menu");
+    route();
+  } catch (err) {
+    msg.className = "form-msg error";
+    msg.textContent = "Could not add the menu item: " + err.message;
+  }
+});
+
 let previousUserId = null;
 let previousLoading = false;
 client.subscribe(({ user, loading, error }) => {
   $("openCreate").hidden = !user || user.role !== "manager";
+  if ($("openMenuCreate")) $("openMenuCreate").hidden = !user || user.role !== "manager";
   if (!user && dialog.open) dialog.close();
+  if ((!user || user.role !== "manager") && menuDialog.open) menuDialog.close();
   const nav = $("sessionNav");
   nav.textContent = "";
   if (user) {

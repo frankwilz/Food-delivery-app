@@ -74,6 +74,9 @@ h2 { font-size: 1.25rem; letter-spacing: -.01em; margin: 2rem 0 .75rem; }
 .hero-body { padding: 1rem 1.25rem 1.25rem; }
 .hero-body h1 { margin: 0 0 .25rem; }
 .facts { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; color: var(--muted); }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 2rem 0 .75rem; }
+.section-head h2 { margin: 0; }
+textarea.field { font: inherit; resize: vertical; }
 .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .9rem; }
 .mitem { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; display: flex; justify-content: space-between; gap: 1rem; }
 .mname { font-weight: 700; margin: 0; }
