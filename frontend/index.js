@@ -39,6 +39,9 @@ const bannerStyle = (cuisine) => {
   return `background: linear-gradient(135deg, hsl(${h} 75% 90%), hsl(${h} 65% 78%));`;
 };
 const isManager = () => client.snapshot().user?.role === "manager";
+const onHome = () => !location.hash || location.hash === "#/";
+// Adding a restaurant only makes sense from the restaurant list, not inside one restaurant
+const updateCreateButton = () => { $("openCreate").hidden = !isManager() || !onHome(); };
 const money = (p) => (typeof p === "number" ? "$" + p.toFixed(2) : String(p ?? ""));
 
 function banner(r, extraClass = "") {
@@ -176,7 +179,8 @@ const accountViews = createAccountViews({ app, el, client, onSignedIn: () => { l
 function route() {
   const viewVersion = ++routeVersion;
   const m = location.hash.match(/^#\/restaurant\/(\d+)/);
-  $("searchWrap").hidden = !(!location.hash || location.hash === "#/");
+  $("searchWrap").hidden = !onHome();
+  updateCreateButton();
   if (location.hash === "#/signin") accountViews.showAuth("signin");
   else if (location.hash === "#/register") accountViews.showAuth("register");
   else if (location.hash === "#/account") accountViews.showAccount();
@@ -294,7 +298,7 @@ $("menuForm").addEventListener("submit", async (e) => {
 let previousUserId = null;
 let previousLoading = false;
 client.subscribe(({ user, loading, error }) => {
-  $("openCreate").hidden = !user || user.role !== "manager";
+  updateCreateButton();
   if ($("openMenuCreate")) $("openMenuCreate").hidden = !user || user.role !== "manager";
   if (!user && dialog.open) dialog.close();
   if ((!user || user.role !== "manager") && menuDialog.open) menuDialog.close();
