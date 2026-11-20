@@ -20,9 +20,10 @@ class OrderRepository(JsonRepository):
         return None
 
     def create(self, order_data: dict) -> dict:
-        orders = self.get_all()
-        # Orders are only ever appended, so an order's id and contents never change once saved
-        new_order = {"id": self.next_id(orders), **order_data}
-        orders.append(new_order)
-        self.save(orders)
-        return new_order
+        with self.lock:
+            orders = self.get_all()
+            # Orders are only ever appended, so an order's id and contents never change once saved
+            new_order = {"id": self.next_id(orders), **order_data}
+            orders.append(new_order)
+            self.save(orders)
+            return new_order

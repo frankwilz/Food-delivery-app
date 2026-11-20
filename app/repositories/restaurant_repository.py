@@ -11,18 +11,20 @@ class RestaurantRepository(JsonRepository):
         return None
 
     def create(self, restaurant_data: dict) -> dict:
-        restaurants = self.get_all()
-        new_restaurant = {"id": self.next_id(restaurants), **restaurant_data}
-        restaurants.append(new_restaurant)
-        self.save(restaurants)
-        return new_restaurant
+        with self.lock:
+            restaurants = self.get_all()
+            new_restaurant = {"id": self.next_id(restaurants), **restaurant_data}
+            restaurants.append(new_restaurant)
+            self.save(restaurants)
+            return new_restaurant
 
     def update(self, restaurant_id: int, changes: dict) -> dict | None:
-        restaurants = self.get_all()
-        for restaurant in restaurants:
-            if restaurant["id"] == restaurant_id:
-                # The id is never overwritten, so identifiers (and menu links) stay stable
-                restaurant.update({key: value for key, value in changes.items() if key != "id"})
-                self.save(restaurants)
-                return restaurant
-        return None
+        with self.lock:
+            restaurants = self.get_all()
+            for restaurant in restaurants:
+                if restaurant["id"] == restaurant_id:
+                    # The id is never overwritten, so identifiers (and menu links) stay stable
+                    restaurant.update({key: value for key, value in changes.items() if key != "id"})
+                    self.save(restaurants)
+                    return restaurant
+            return None

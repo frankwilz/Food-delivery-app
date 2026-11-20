@@ -190,6 +190,18 @@ Each layer has one responsibility:
 
 The route does not read the JSON file directly.
 
+### Concurrent requests
+
+FastAPI runs the routes in a thread pool, so two requests can change the same data file at once. Every change is a read → modify → write of the whole file, so without protection the second save would silently overwrite the first. That could lose a cart quantity, give two records the same id, create two accounts with one email, or turn a double-clicked **Place order** into two orders.
+
+`app/repositories/json_repository.py` prevents this with one re-entrant lock per data file:
+
+- **Repositories** hold their file's lock for the whole of each `create` and `update`.
+- **Services** wrap each check followed by a write in `transaction(...)`, so the check is still true when the write happens. Examples are duplicate email/name checks, cart changes, and checkout. Checkout locks the carts and orders files together, so a cart becomes exactly one order.
+- `transaction` takes its locks in a fixed order (sorted by file path), so two transactions over the same files cannot deadlock.
+
+`tests/test_concurrency.py` starts several threads at the same moment and checks that nothing is lost or duplicated. These locks cover one server process, which is how the app runs. Several worker processes (`uvicorn --workers N`) would need file-system locks or a database.
+
 ### Customer-to-order integration (5.2)
 
 `app/api/dependencies.py` builds every repository and service through FastAPI's `Depends` functions. Routes request services from that module. Checkout receives the customer and menu services, cart service/repository, restaurant repository and order repository; it never opens another subsystem's JSON file. Shared dependencies are reused within a request, and file paths come from `app.core.config` when repositories are built.
