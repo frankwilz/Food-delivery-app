@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.api.dependencies import MANAGER_ONLY, get_menu_service, require_manager
 from app.schemas.error import ErrorResponse
@@ -27,7 +29,7 @@ EMPTY_UPDATE = {400: {"model": ErrorResponse, "description": "The update body co
     responses=RESTAURANT_NOT_FOUND,
 )
 def list_menu_items(
-    restaurant_id: int,
+    restaurant_id: Annotated[int, Path(description="The stable identifier of the restaurant whose menu is requested.")],
     include_inactive: bool = Query(default=False, description="Also return deactivated items."),
     service: MenuService = Depends(get_menu_service),
 ):
@@ -44,7 +46,11 @@ def list_menu_items(
     ),
     responses=ITEM_NOT_FOUND,
 )
-def get_menu_item(restaurant_id: int, item_id: int, service: MenuService = Depends(get_menu_service)):
+def get_menu_item(
+    restaurant_id: Annotated[int, Path(description="The stable identifier of the restaurant that owns the menu item.")],
+    item_id: Annotated[int, Path(description="The stable identifier of a menu item belonging to this restaurant.")],
+    service: MenuService = Depends(get_menu_service),
+):
     return service.get_menu_item(restaurant_id, item_id)
 
 
@@ -62,7 +68,7 @@ def get_menu_item(restaurant_id: int, item_id: int, service: MenuService = Depen
     dependencies=[Depends(require_manager)],
 )
 def create_menu_item(
-    restaurant_id: int,
+    restaurant_id: Annotated[int, Path(description="The stable identifier of the restaurant that will own the menu item.")],
     item: MenuItemCreate,
     service: MenuService = Depends(get_menu_service),
 ):
@@ -84,8 +90,8 @@ def create_menu_item(
     dependencies=[Depends(require_manager)],
 )
 def update_menu_item(
-    restaurant_id: int,
-    item_id: int,
+    restaurant_id: Annotated[int, Path(description="The stable identifier of the restaurant that owns the menu item.")],
+    item_id: Annotated[int, Path(description="The stable identifier of a menu item belonging to this restaurant.")],
     changes: MenuItemUpdate,
     service: MenuService = Depends(get_menu_service),
 ):
@@ -104,5 +110,9 @@ def update_menu_item(
     responses={**MANAGER_ONLY, **ITEM_NOT_FOUND},
     dependencies=[Depends(require_manager)],
 )
-def deactivate_menu_item(restaurant_id: int, item_id: int, service: MenuService = Depends(get_menu_service)):
+def deactivate_menu_item(
+    restaurant_id: Annotated[int, Path(description="The stable identifier of the restaurant that owns the menu item.")],
+    item_id: Annotated[int, Path(description="The stable identifier of a menu item belonging to this restaurant.")],
+    service: MenuService = Depends(get_menu_service),
+):
     return service.deactivate_menu_item(restaurant_id, item_id)

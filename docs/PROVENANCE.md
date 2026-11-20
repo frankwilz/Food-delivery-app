@@ -7,7 +7,7 @@ This file records where the work in this repository came from: who wrote each pa
 | Member | Student # | GitHub |
 | --- | --- | --- |
 | Frank Williams | 23869407 | `frankwilz` |
-| Olutayo Akere | 27555010 | — |
+| Olutayo Akere | 27555010 | `tayo-ak` |
 | AbdulHaady Oludare | 81742678 | `Abdul138` |
 | Zay Lin Myat | 13187745 | `EuReKaA99` |
 
@@ -34,25 +34,32 @@ The information below comes from the repository's pull requests and git history 
 | #9 | Menu validation (409 duplicate name, 400 empty update), atomic file saves, error responses in `/docs`, README menu section and the menu-storage design decision | Zay Lin Myat | Zay Lin Myat | `app/services/menu_service.py`, `app/repositories/menu_item_repository.py`, `app/api/routes/menu.py`, `tests/test_menu.py`, `README.md` |
 | #11 | Restaurant CRUD: `GET /restaurants/{id}`, `POST /restaurants`, `PATCH /restaurants/{id}`, search and filters; `RestaurantCreate`/`RestaurantUpdate`, shared `ErrorResponse`, extra sample restaurants | Zay Lin Myat | Frank Williams | `app/api/routes/restaurants.py`, `app/services/restaurant_service.py`, `app/repositories/restaurant_repository.py`, `app/schemas/restaurant.py`, `app/schemas/error.py`, `data/restaurants.json`, `tests/test_restaurants.py`, `README.md` |
 | #12 | Testing, CI and integration: GitHub Actions workflow, vertical-slice and real-restart persistence tests, JSON 500 for data-file errors, `/health` response model, README updates | Frank Williams | AbdulHaady Oludare | `.github/workflows/tests.yml`, `tests/test_integration.py`, `app/main.py`, `app/schemas/health.py`, `README.md` |
-| — | Frontend: restaurant list, details, menu view, create/update form | _To be completed_ | — | _To be completed_ |
+| [#14](https://github.com/frankwilz/Food-delivery-app/pull/14) | Original restaurant/menu frontend and backend CORS configuration | Olutayo Akere (`tayo-ak`) | Zay Lin Myat (`EuReKaA99`) | `frontend/index.html`, `app/main.py` |
 
-## Milestone 2: Customer-to-order integration (5.2)
+## Milestone 2: Integrated system
+
+The [M2 summary](milestones/M2.md), [Decision Receipt M2.3](decision-receipt-m2.md) and [planning draft](../scrum/sprint-planning-m2.md) separate completed integration evidence from work awaiting review or member confirmation. Assignments alone are not evidence of authorship.
 
 | Work | Contribution and source | Review status |
 | --- | --- | --- |
-| Shared FastAPI repository/service dependencies and route wiring ([PR #88](https://github.com/frankwilz/Food-delivery-app/pull/88)) | Frank Williams prepared the integration against current `main`, adapting Zay Lin Myat's original implementation in commit `96d7b74` (closed PR #86). Original authorship is retained with a co-author credit. | Pending approvals from Abdul138 and EuReKaA99; not merged. |
-| Representative carts/orders | Reused from Zay Lin Myat's preserved `96d7b74` implementation; validated against all five data files. | Pending review. |
-| Workflow and restart verification, demo instructions and test isolation | Frank Williams, with Codex assistance, adapted the preserved workflow examples and added focused behavioral coverage for registration, cart updates, checkout, order retrieval and persistence. | Pending review. |
+| Frontend file separation ([#27](https://github.com/frankwilz/Food-delivery-app/pull/27)) | AbdulHaady Oludare split the original frontend into HTML, CSS and JavaScript and updated the README. | Merged by Olutayo Akere (`tayo-ak`); this is retained work underlying the new frontend modules. |
+| Shared FastAPI repository/service dependencies and route wiring ([PR #88](https://github.com/frankwilz/Food-delivery-app/pull/88)) | Frank Williams prepared the integration against then-current `main`, adapting Zay Lin Myat's original implementation in commit `96d7b74` (closed PR #86). Original authorship is retained with a co-author credit. | Approved and merged by Abdul138. [Review evidence](https://github.com/frankwilz/Food-delivery-app/pull/88#pullrequestreview-5962148609). One recorded approval; no second approval is claimed. |
+| Representative carts/orders ([PR #89](https://github.com/frankwilz/Food-delivery-app/pull/89)) | Reused from Zay Lin Myat's preserved `96d7b74` implementation; validated against all five data files. | Approved and merged by Abdul138. [Review evidence](https://github.com/frankwilz/Food-delivery-app/pull/89#pullrequestreview-5962151427). |
+| Workflow and restart verification, demo instructions and test isolation (#89) | Frank Williams, with Codex assistance, adapted the preserved workflow examples and added focused behavioral coverage for registration, cart updates, checkout, order retrieval and persistence. | Approved and merged by Abdul138; the review records 477 passing tests and unchanged committed data. |
+| Order-retrieval prerequisite included through #88 | Original implementation by Zay Lin Myat in commit `94c07ab` (closed PR #85). Frank included the preserved commit for integration; this is not newly authored 5.2 code. | Abdul138's #88 review records the team's decision to land it here. |
+| Frontend account/authentication ([#90](https://github.com/frankwilz/Food-delivery-app/pull/90), issue #52) | Frank Williams, with Codex assistance: account forms, shared HTTP/session client, API-scoped token persistence, stale-response protection, manager controls and 19 frontend tests. | Open for review from Abdul138, EuReKaA99 and tayo-ak; at least two approvals required. |
+| Frontend cart/checkout/orders ([#91](https://github.com/frankwilz/Food-delivery-app/pull/91), issue #53) | Frank Williams, with Codex assistance: menu quantity controls, API-priced cart editing/clear, checkout, saved confirmation/history and 8 ordering tests. | Open for review; combined 27 frontend tests and 477 Python tests pass. Browser workflow/errors verified on temporary data; no merge or human feedback revision claimed. |
+| API/reference and milestone documentation (#57) | Frank Williams, with Codex assistance, is preparing README/API documentation, the M2 summary, M2.3 receipt, sprint-planning draft and provenance updates. | Pending review; final submission, team practice and individual evidence remain incomplete. |
 
-The existing order-retrieval implementation from commit `94c07ab` (PR #85, original author Zay Lin Myat) is an **unmerged prerequisite**, not new 5.2 work. It is included on the feature branch for testing, and kept outside the first 5.2 PR's file diff by using its branch as the base. No PR is merged as part of this preparation.
+PRs #88 and #89 were merged by Abdul138 on November 18, 2026. Each has one recorded approval from Abdul138. The current round requests reviews from **Abdul138, EuReKaA99 and tayo-ak** and requires **at least two teammate approvals** before merging. Do not infer a second approval or a feedback-driven revision from a merge alone.
 
-**AI assistance:** OpenAI Codex inspected the preserved branches, adapted dependency wiring, helped write tests and documentation, ran verification and prepared the two review PRs. Human peer review and two teammate approvals remain required.
+**AI assistance:** OpenAI Codex inspected the preserved branches, adapted dependency wiring, helped write the new frontend, tests and documentation, ran verification, tested browser flows on isolated data and prepared the review PRs. Each member must confirm their own M2 contributions, external sources, AI use and individual-requirement evidence before submission; this document does not supply those confirmations on their behalf.
 
 ### Decision evidence: shared dependency construction
 
 Previously checkout and order routes imported repository builders from the cart router, while other routers built separate services. Repository paths had to be patched in several modules during tests. All routes now obtain services from `app/api/dependencies.py`; repositories read their configured paths when constructed and FastAPI shares dependencies within a request. Services retain business rules and repositories retain file access.
 
-The trade-off is a central composition module that imports each subsystem. It keeps construction consistent and lets tests redirect all storage through one configuration module. Evidence is PR #88, `test_full_customer_to_order_workflow`, `test_customer_cart_and_order_persist_after_server_restarts` and the existing feature suite. Local validation: 477 tests passed, all five data files unchanged by tests, and the register → login → browse → cart → checkout → order-read workflow verified through Swagger UI on temporary data. Peer-review evidence will be recorded after review; this entry does not claim an approval or merge.
+The trade-off is a central composition module that imports each subsystem. It keeps construction consistent and lets tests redirect all storage through one configuration module. Evidence is PR #88, `test_full_customer_to_order_workflow`, `test_customer_cart_and_order_persist_after_server_restarts` and the existing feature suite. The merged integration baseline had 477 passing tests, all five data files unchanged by tests, and the register → login → browse → cart → checkout → order-read workflow checked through Swagger UI on temporary data. Abdul138's linked reviews confirm the automated validation. The [M2.3 receipt](decision-receipt-m2.md) records the available evidence and the per-member confirmations still needed.
 
 ## Engineering design decision
 
@@ -64,7 +71,9 @@ The trade-off is a central composition module that imports each subsystem. It ke
 
 Proposed in PR #7 and documented in PR #9 (see also `README.md`, "Design decision: menu storage").
 
-## Decision Receipt (5.9): shared JSON repository and centralized error handling
+## Historical refactor receipt: shared JSON repository and centralized error handling
+
+This preserves the earlier pre-M2 refactor record. Its 116-test count and then-unused `ForbiddenError` describe that earlier implementation, not the current system. The M2 decision and current evidence are in [Decision Receipt M2.3](decision-receipt-m2.md).
 
 **Decision:** shared persistence code and shared error handling each live in one place.
 
@@ -75,7 +84,7 @@ Proposed in PR #7 and documented in PR #9 (see also `README.md`, "Design decisio
   - The duplicate `ErrorResponse` re-export was removed from `app/schemas/menu_item.py`. Every module now imports it from `app/schemas/error.py`.
 - **Why:** both repositories had the same load, save and id code, and every route repeated the same `try/except` blocks. That made it easy for one copy to drift from the others, for example a new route that forgot to turn an error into a 404. With one base class and one error table, a new feature such as orders gets atomic saves and correct status codes for free.
 - **Trade-off:** the route that raises an error no longer shows its status code. To find it, you look up the error's base class in `DOMAIN_ERROR_STATUS` in `main.py`. The `responses=` lists on each route still document the possible errors in `/docs`.
-- **Behaviour:** unchanged. Status codes, `{"detail": "..."}` bodies and error messages are the same, all 116 tests pass without changes, and the generated OpenAPI schema is identical before and after. `ForbiddenError` (403) has no users yet; it exists so that future permission checks follow the same pattern.
+- **Behaviour at that refactor:** status codes, `{"detail": "..."}` bodies and error messages were unchanged, all 116 tests passed without changes, and the generated OpenAPI schema was identical before and after. `ForbiddenError` (403) had no users then; M2 now uses it for deactivated accounts and role checks.
 
 ## External sources
 
@@ -94,11 +103,14 @@ _Members: add any other tutorials, Stack Overflow answers, course materials or c
 | Member | Tool | What it was used for | How the output was checked |
 | --- | --- | --- | --- |
 | Frank Williams | Claude Code (Anthropic) | Drafting PR #12: the data-storage error handler, the `/health` response model | Ran the full test suite locally (116 passed)|
+| Frank Williams | OpenAI Codex | M2 integration PRs #88/#89: inspecting/reusing preserved work with attribution, dependency wiring, workflow/restart tests and documentation; preparing frontend/account/order views and the remaining milestone documentation. | Integration baseline: 477 tests passed, real-server restart and temporary-data Swagger checks; Abdul138 reviewed #88/#89. Final frontend/documentation checks and peer review remain to be recorded. |
 | AbdulHaady Oludare | Claude Code (Anthropic) | Used it to create menu tests and reviewed PR's  | Reviewed by 2 other teammates Frank and Zay|
 | Zay Lin Myat | Claude (Anthropic) | Used to draft and review Pull Request #11,Add restaurant get, create, update and search/filter | Run Test locally on local computer|
 | Olutayo Akere | _To be completed_ | | |
 ## Verification
 
-- `python -m pytest -q` passes locally: 116 tests.
-- GitHub Actions passes on Python 3.11 and 3.13 for every push and pull request: https://github.com/frankwilz/Food-delivery-app/actions
+- Historical M1 validation recorded 116 passing tests; this is not the current suite count.
+- The merged #88/#89 integration baseline recorded 477 passing tests and unchanged data in the reviews linked above. Rerun and record final counts after the remaining frontend/documentation changes.
+- GitHub Actions is configured to test Python 3.11 and 3.13 on pushes and PRs. Inspect the actual [Actions results](https://github.com/frankwilz/Food-delivery-app/actions) for the final commit rather than assuming a pending run has passed.
 - Tests use isolated temporary copies of the data files. CI fails if any test modifies `data/`.
+- Final tag, full SHA, team demo practice and Canvas submission remain pending in the [M2 summary](milestones/M2.md).
