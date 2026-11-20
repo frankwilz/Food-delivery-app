@@ -16,16 +16,17 @@
       <div class="search" id="searchWrap">
         <input id="search" type="search" placeholder="Search restaurants, cuisines or addresses" aria-label="Search restaurants">
       </div>
-      <button class="btn" id="openCreate" type="button">Add restaurant</button>
+      <button class="btn" id="openCreate" type="button" hidden>Add restaurant</button>
+      <nav class="session-nav" aria-label="Account" id="sessionNav"></nav>
     </div>
   </header>
 
+  <div class="session-status" id="sessionStatus" role="status" aria-live="polite"></div>
   <main id="app" aria-live="polite"></main>
 
   <footer>
     <label class="inline">API address <input id="apiBase" value="http://127.0.0.1:8000"></label>
-    <label class="inline">Manager token <input id="managerToken" type="password" autocomplete="off"
-      placeholder="Needed to add restaurants"></label>
+    <span id="apiMsg" class="form-msg" role="status" aria-live="polite"></span>
   </footer>
 
   <dialog id="createDialog" aria-labelledby="createTitle">
@@ -46,6 +47,6 @@
     </div>
   </dialog>
 
-<script src="index.js"></script>
+<script type="module" src="index.js"></script>
 </body>
 </html>
