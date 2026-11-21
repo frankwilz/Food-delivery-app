@@ -43,6 +43,9 @@ const onHome = () => !location.hash || location.hash === "#/";
 // Adding a restaurant only makes sense from the restaurant list, not inside one restaurant
 const updateCreateButton = () => { $("openCreate").hidden = !isManager() || !onHome(); };
 const money = (p) => (typeof p === "number" ? "$" + p.toFixed(2) : String(p ?? ""));
+const ratingBadge = (r, suffix = "") => (r.rating
+  ? el("span", { class: "rating" }, r.rating + suffix)
+  : el("span", { class: "rating-new" }, "New"));
 
 function banner(r, extraClass = "") {
   return el("div", { class: "banner " + extraClass, style: bannerStyle(r.cuisine) },
@@ -77,7 +80,7 @@ function renderGrid() {
       banner(r),
       el("div", { class: "rbody" },
         el("p", { class: "rname" }, r.name),
-        el("div", { class: "rmeta" }, el("span", { class: "rating" }, String(r.rating)), el("span", {}, r.cuisine)),
+        el("div", { class: "rmeta" }, ratingBadge(r), el("span", {}, r.cuisine)),
         el("div", { class: "addr" }, r.address))))));
 }
 
@@ -143,7 +146,7 @@ async function showDetail(id, viewVersion) {
       el("div", { class: "hero-body" },
         el("h1", {}, r.name),
         el("div", { class: "facts" },
-          el("span", { class: "rating" }, r.rating + " rating"),
+          ratingBadge(r, " rating"),
           el("span", {}, r.cuisine),
           el("span", {}, r.address),
           el("span", {}, r.is_open ? "Open now" : "Closed right now")))),
@@ -163,8 +166,10 @@ async function showDetail(id, viewVersion) {
     Object.entries(groups).forEach(([cat, group]) => {
       if (cat) menuHolder.append(el("h2", {}, cat));
       menuHolder.append(el("div", { class: "menu-grid" }, group.map((m) =>
-        el("div", { class: "mitem" },
-          el("div", {}, el("p", { class: "mname" }, m.name), m.description ? el("p", { class: "mdesc" }, m.description) : ""),
+        el("div", { class: "mitem" + (m.is_available ? "" : " unavailable") },
+          el("div", {},
+            el("p", { class: "mname" }, m.name, m.is_available ? "" : el("span", { class: "tag" }, "Unavailable")),
+            m.description ? el("p", { class: "mdesc" }, m.description) : ""),
           el("div", { class: "mprice" }, money(m.price))))));
     });
   } catch (err) {
@@ -181,6 +186,10 @@ function route() {
   const m = location.hash.match(/^#\/restaurant\/(\d+)/);
   $("searchWrap").hidden = !onHome();
   updateCreateButton();
+  if ((location.hash === "#/signin" || location.hash === "#/register") && client.snapshot().user) {
+    location.replace("#/account");
+    return;
+  }
   if (location.hash === "#/signin") accountViews.showAuth("signin");
   else if (location.hash === "#/register") accountViews.showAuth("register");
   else if (location.hash === "#/account") accountViews.showAccount();
@@ -229,7 +238,6 @@ $("createForm").addEventListener("submit", async (e) => {
     name: f.name.value.trim(),
     cuisine: f.cuisine.value.trim(),
     address: f.address.value.trim(),
-    rating: parseFloat(f.rating.value),
     is_open: f.is_open.checked,
   };
   try {

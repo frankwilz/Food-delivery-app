@@ -82,6 +82,10 @@ textarea.field { font: inherit; resize: vertical; }
 .mname { font-weight: 700; margin: 0; }
 .mdesc { color: var(--muted); font-size: .9rem; margin: .2rem 0 0; }
 .mprice { font-weight: 800; white-space: nowrap; }
+.mitem.unavailable { background: var(--bg); }
+.mitem.unavailable .mname, .mitem.unavailable .mprice { color: var(--closed); }
+.tag { display: inline-block; margin-left: .4rem; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--line); font-size: .75rem; font-weight: 700; color: var(--muted); vertical-align: middle; }
+.rating-new { font-weight: 700; color: var(--accent-dark); }
 
 /* States */
 .state { background: var(--card); border: 1px dashed var(--line); border-radius: 12px; padding: 2rem 1rem; text-align: center; color: var(--muted); }
