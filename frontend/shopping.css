@@ -17,7 +17,7 @@
 .order-card p { margin: .25rem 0; }
 .order-lines { display: grid; gap: .75rem; }
 .order-line { display: flex; justify-content: space-between; gap: 1rem; }
-.unavailable { color: var(--danger); font-size: .9rem; }
+.menu-actions .unavailable, .shopping-panel .unavailable { color: var(--danger); font-size: .9rem; }
 .muted { color: var(--muted); }
 @media (max-width: 650px) {
   .cart-line { grid-template-columns: 1fr auto; }
