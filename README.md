@@ -25,7 +25,7 @@ git clone https://github.com/frankwilz/Food-delivery-app.git
 cd Food-delivery-app
 ```
 
-For an existing clone, update to the reviewed version on `main` before starting:
+For an existing clone, update to the latest merged version on `main` before starting:
 
 ```bash
 git fetch origin
