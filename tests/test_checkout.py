@@ -15,7 +15,7 @@ from app.repositories.customer_repository import CustomerRepository
 from app.repositories.menu_item_repository import MenuItemRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.restaurant_repository import RestaurantRepository
-from app.services.cart_service import CartService
+from app.services.cart_service import CartService, DifferentRestaurantError
 from app.services.checkout_service import (
     CheckoutService,
     EmptyCartError,
@@ -678,3 +678,45 @@ def test_order_repository_get_by_cart_id(tmp_path):
 
     assert repository.get_by_cart_id(7) == order
     assert repository.get_by_cart_id(8) is None
+
+
+# --- 5.3: an order never mixes restaurants ---
+
+
+@pytest.mark.parametrize(
+    ("restaurant_id", "items"),
+    [
+        (1, [{"menu_item_id": PIZZA, "quantity": 1}, {"menu_item_id": 4, "quantity": 1}]),
+        (2, [{"menu_item_id": PIZZA, "quantity": 1}]),
+    ],
+    ids=["mixed-menu-items", "wrong-cart-restaurant"],
+)
+def test_cart_mixing_restaurants_cannot_be_checked_out(client, tmp_path, restaurant_id, items):
+    """Regression #51 / preserved PR #82: invalid restaurant links must not create an order."""
+    # Only possible if carts.json was changed outside the API; the cart endpoints refuse it (409).
+    write_carts(tmp_path, [cart_record(restaurant_id=restaurant_id, items=items)])
+    before = data_files(tmp_path)
+    assert set(before) == {"customers.json", "restaurants.json", "menu_items.json", "carts.json", "orders.json"}
+
+    response = client.post("/checkout", headers=ANA)
+
+    assert response.status_code == 409
+    assert "is from restaurant" in response.json()["detail"]
+    assert "but the cart has items from restaurant" in response.json()["detail"]
+    assert stored_orders(tmp_path) == []
+    assert stored_carts(tmp_path)[0]["status"] == "active"
+    assert data_files(tmp_path) == before
+
+
+def test_service_rejects_a_cart_mixing_restaurants(checkout_service, tmp_path):
+    """Regression #51 / preserved PR #82: direct service calls enforce the same rule before writes."""
+    write_carts(
+        tmp_path,
+        [cart_record(restaurant_id=2, items=[{"menu_item_id": 4, "quantity": 1}, {"menu_item_id": PIZZA, "quantity": 1}])],
+    )
+    before = data_files(tmp_path)
+
+    with pytest.raises(DifferentRestaurantError):
+        checkout_service.checkout(ANA_ID)
+
+    assert data_files(tmp_path) == before
