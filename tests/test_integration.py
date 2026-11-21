@@ -128,10 +128,13 @@ def test_every_endpoint_is_documented(client):
         "/restaurants/{restaurant_id}/menu",
         "/restaurants/{restaurant_id}/menu/{item_id}",
     } <= paths.keys()
-    for operations in paths.values():
+    for path, operations in paths.items():
         for operation in operations.values():
             assert operation["summary"]
             assert operation["description"]
+            for parameter in operation.get("parameters", []):
+                if parameter["in"] == "path":
+                    assert parameter.get("description"), f"{path}: {parameter['name']} needs a description"
             assert "500" in operation["responses"]
             # Every success response is backed by a response_model (a schema), never a raw dict
             success = next(code for code in operation["responses"] if code.startswith("2"))
