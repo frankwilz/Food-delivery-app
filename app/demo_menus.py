@@ -52,6 +52,49 @@ RECIPES = (
 FALLBACK = (("House sandwich", 9.5, "Mains"), ("Side salad", 4.0, "Sides"), ("Lemonade", 2.5, "Drinks"))
 
 
+FOOD_DESCRIPTIONS = {
+    "Margherita pizza": "Tomato sauce, mozzarella and fresh basil on a crisp crust.",
+    "Garden salad": "Crisp greens, cucumber and tomato with a bright lemon dressing.",
+    "Sparkling water": "Chilled sparkling water with a fresh lemon slice.",
+    "Vegetable burrito": "Roasted peppers, black beans, rice and salsa wrapped in a soft tortilla.",
+    "Chips and salsa": "Crunchy corn tortilla chips with roasted tomato salsa.",
+    "Limeade": "Fresh lime flavor, a touch of sweetness and plenty of ice.",
+    "Chickpea curry with rice": "Chickpeas simmered in a warming tomato curry, served with fluffy rice.",
+    "Garlic naan": "Soft flatbread brushed with garlic butter and herbs.",
+    "Mango lassi": "A cool, creamy blend of mango, yogurt and a hint of cardamom.",
+    "Vegetable sushi roll": "Cucumber, avocado and carrot rolled with seasoned rice and nori.",
+    "Edamame": "Tender steamed soybeans finished with a light sprinkle of sea salt.",
+    "Green tea": "Freshly brewed green tea with a clean, delicate finish.",
+    "Vegetable fried rice": "Wok-tossed rice with peas, carrots and a savory soy seasoning.",
+    "Spring rolls": "Crisp rolls filled with cabbage and carrot, with sweet chili sauce.",
+    "Jasmine tea": "Warm jasmine tea with a light floral aroma.",
+    "Tofu noodle bowl": "Rice noodles, golden tofu and crunchy vegetables in a tangy sesame sauce.",
+    "Cucumber salad": "Cool cucumber ribbons with lime, herbs and a gentle chili kick.",
+    "Iced lemon tea": "Chilled black tea balanced with fresh lemon and a little sweetness.",
+    "Vegetable rice bowl": "Steamed rice topped with colorful vegetables, sesame and a savory chili sauce.",
+    "Kimchi side": "A small serving of tangy, gently spicy fermented cabbage.",
+    "Barley tea": "Roasted barley tea with a smooth, nutty flavor.",
+    "Falafel pita": "Crisp chickpea falafel, lettuce and tomato in warm pita with tahini sauce.",
+    "Hummus and pita": "Creamy chickpea hummus with olive oil and soft pita wedges.",
+    "Mint lemonade": "Bright lemon and fresh mint served over ice.",
+    "Fish sandwich": "A golden fish fillet with lettuce and lemon sauce in a soft bun.",
+    "Coleslaw": "Shredded cabbage and carrot tossed in a creamy, tangy dressing.",
+    "Lemonade": "Classic lemonade with a sunny citrus flavor and a refreshing finish.",
+    "Roasted vegetable bowl": "Roasted seasonal vegetables over grains with a lemon-tahini drizzle.",
+    "Seasonal fruit": "A colorful mix of fresh, bite-sized seasonal fruit.",
+    "Citrus iced tea": "Cool black tea with orange and lemon notes.",
+    "Breakfast sandwich": "Egg and melted cheese tucked into a warm, toasted bun.",
+    "Blueberry muffin": "A soft blueberry muffin with a golden top and a hint of vanilla.",
+    "Iced coffee": "Smooth brewed coffee poured over ice, with milk served on the side.",
+    "Grilled chicken wrap": "Grilled chicken, crisp lettuce and tomato wrapped with a herb dressing.",
+    "Potato wedges": "Golden potato wedges seasoned with paprika and herbs.",
+    "Iced tea": "Freshly brewed black tea chilled over ice.",
+    "House sandwich": "Roasted vegetables, cheese and crisp greens layered in toasted bread.",
+    "Side salad": "Mixed greens, cucumber and cherry tomatoes with a light vinaigrette.",
+}
+DEMO_DISCLAIMER = "Fictional sample dish and price, not the restaurant's real menu."
+
+
 def demo_menu_items(cuisine: str) -> tuple[MenuItemCreate, ...]:
     """Validate three original sample dishes before any menu record is written."""
     wanted = cuisine.casefold()
@@ -59,7 +102,7 @@ def demo_menu_items(cuisine: str) -> tuple[MenuItemCreate, ...]:
     return tuple(
         MenuItemCreate(
             name=f"Demo {name}",
-            description="Demo menu: Fictional sample dish and price, not the restaurant's real menu.",
+            description=f"Demo menu: {FOOD_DESCRIPTIONS[name]} {DEMO_DISCLAIMER}",
             price=price,
             category=category,
             is_available=True,
