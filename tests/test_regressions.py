@@ -43,8 +43,8 @@ def stored(file_path) -> list[dict]:
 
 
 def test_double_clicked_place_order_creates_one_order(client, slow_saves):
-    """Regression test for PR #95."""
-    client.post("/cart/items", json={"menu_item_id": PIZZA, "quantity": 1}, headers=ANA)
+    """PR #95: concurrent checkout requests must not place duplicate orders."""
+    assert client.post("/cart/items", json={"menu_item_id": PIZZA, "quantity": 1}, headers=ANA).status_code == 200
 
     responses = send_together([("POST", "/checkout", None)] * 3)
 
@@ -53,8 +53,8 @@ def test_double_clicked_place_order_creates_one_order(client, slow_saves):
 
 
 def test_quick_add_clicks_keep_every_quantity(client, slow_saves):
-    """Regression test for PR #95."""
-    client.get("/cart", headers=ANA)
+    """PR #95: concurrent cart additions must not overwrite each other's quantities."""
+    assert client.get("/cart", headers=ANA).status_code == 200
 
     responses = send_together([("POST", "/cart/items", {"menu_item_id": PIZZA, "quantity": 1})] * 4)
 

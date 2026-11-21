@@ -1,5 +1,5 @@
 import json
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from app.schemas.cart import MAX_QUANTITY, Cart
@@ -34,7 +34,10 @@ def load_and_check(data_dir: Path) -> dict[str, dict[int, dict]]:
         assert cart["customer_id"] in data["customers"]
         if cart["status"] == "active":
             active_customers.append(cart["customer_id"])
-        assert cart["restaurant_id"] in data["restaurants"] if cart["items"] else cart["restaurant_id"] is None
+        if cart["items"]:
+            assert cart["restaurant_id"] in data["restaurants"]
+        else:
+            assert cart["restaurant_id"] is None
         for line in cart["items"]:
             assert set(line) == {"menu_item_id", "quantity"}
             assert type(line["quantity"]) is int and 1 <= line["quantity"] <= MAX_QUANTITY
@@ -54,7 +57,10 @@ def load_and_check(data_dir: Path) -> dict[str, dict[int, dict]]:
         ]
         for line in order["items"]:
             assert data["menu_items"][line["menu_item_id"]]["restaurant_id"] == order["restaurant_id"]
-            assert Decimal(str(line["unit_price"])) * line["quantity"] == Decimal(str(line["line_total"]))
+            expected = (Decimal(str(line["unit_price"])) * line["quantity"]).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            assert expected == Decimal(str(line["line_total"]))
         total = sum(Decimal(str(line["line_total"])) for line in order["items"])
         assert total == Decimal(str(order["subtotal"])) == Decimal(str(order["total"]))
     assert len(ordered_carts) == len(set(ordered_carts)), "a cart became two orders"

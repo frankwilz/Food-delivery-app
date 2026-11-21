@@ -63,7 +63,7 @@ def test_demo_unavailable_item_is_listed_but_cannot_be_ordered(client):
 
 @pytest.mark.parametrize("quantity", [0, -1, 100, 1.5, "two", None])
 def test_demo_invalid_quantity_is_rejected_and_changes_nothing(client, quantity):
-    add(client, PIZZA, 1)
+    assert add(client, PIZZA, 1).status_code == 200
     before = stored(config.CARTS_FILE)
 
     assert add(client, PIZZA, quantity).status_code == 422
@@ -72,7 +72,7 @@ def test_demo_invalid_quantity_is_rejected_and_changes_nothing(client, quantity)
 
 
 def test_demo_quantity_above_the_maximum_in_total_is_rejected(client):
-    add(client, PIZZA, 60)
+    assert add(client, PIZZA, 60).status_code == 200
 
     response = add(client, PIZZA, 40)
 
@@ -81,7 +81,7 @@ def test_demo_quantity_above_the_maximum_in_total_is_rejected(client):
 
 
 def test_demo_one_cart_cannot_mix_restaurants(client):
-    add(client, PIZZA)
+    assert add(client, PIZZA).status_code == 200
 
     response = add(client, CRUNCHWRAP)
 
@@ -114,19 +114,21 @@ def test_demo_customer_cannot_use_manager_endpoints(client):
 
 
 def test_demo_price_change_before_checkout_charges_the_new_price(client):
-    add(client, PIZZA, 2)
+    assert add(client, PIZZA, 2).status_code == 200
     assert client.get("/cart", headers=ANA).json()["total"] == 33.98
 
     assert client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.50}, headers=MANAGER).status_code == 200
 
     assert client.get("/cart", headers=ANA).json()["total"] == 37.00
-    order = client.post("/checkout", headers=ANA).json()
+    checkout = client.post("/checkout", headers=ANA)
+    assert checkout.status_code == 201
+    order = checkout.json()
     assert order["items"][0]["unit_price"] == 18.50 and order["total"] == 37.00
 
 
 def test_demo_item_made_unavailable_before_checkout_blocks_it_until_available(client):
-    add(client, PIZZA)
-    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"is_available": False}, headers=MANAGER)
+    assert add(client, PIZZA).status_code == 200
+    assert client.patch(f"/restaurants/1/menu/{PIZZA}", json={"is_available": False}, headers=MANAGER).status_code == 200
 
     cart = client.get("/cart", headers=ANA).json()
     assert cart["items"][0]["is_orderable"] is False
@@ -134,38 +136,53 @@ def test_demo_item_made_unavailable_before_checkout_blocks_it_until_available(cl
     assert blocked.status_code == 409 and "Pepperoni Pizza" in blocked.json()["detail"]
     assert stored(config.ORDERS_FILE) == []
 
-    client.patch(f"/restaurants/1/menu/{PIZZA}", json={"is_available": True}, headers=MANAGER)
+    assert client.patch(f"/restaurants/1/menu/{PIZZA}", json={"is_available": True}, headers=MANAGER).status_code == 200
     assert client.post("/checkout", headers=ANA).status_code == 201
 
 
 def test_new_restaurant_menu_changes_flow_through_cart_into_a_fixed_order(client):
-    restaurant = client.post(
+    created_restaurant = client.post(
         "/restaurants", json={"name": "Lagos Kitchen", "cuisine": "Nigerian", "address": "8 Jollof Lane"}, headers=MANAGER
-    ).json()
-    dish = client.post(
+    )
+    assert created_restaurant.status_code == 201
+    restaurant = created_restaurant.json()
+    created_dish = client.post(
         f"/restaurants/{restaurant['id']}/menu",
         json={"name": "Jollof Rice", "price": 14.25, "category": "Mains"},
         headers=MANAGER,
-    ).json()
+    )
+    assert created_dish.status_code == 201
+    dish = created_dish.json()
 
     customer = register_and_login(client, "hungry@example.com")
     found = client.get("/restaurants", params={"search": "nigerian", "is_open": True}).json()
     assert [r["id"] for r in found] == [restaurant["id"]]
     assert [item["id"] for item in client.get(f"/restaurants/{restaurant['id']}/menu").json()] == [dish["id"]]
 
-    add(client, dish["id"], 2, headers=customer)
+    assert add(client, dish["id"], 1, headers=customer).status_code == 200
+    changed_cart = client.patch(f"/cart/items/{dish['id']}", json={"quantity": 2}, headers=customer)
+    assert changed_cart.status_code == 200
+    assert changed_cart.json()["items"][0]["quantity"] == 2
     assert client.get("/cart", headers=customer).json()["total"] == 28.50
 
-    client.patch(f"/restaurants/{restaurant['id']}/menu/{dish['id']}", json={"price": 15.00}, headers=MANAGER)
-    order = client.post("/checkout", headers=customer).json()
+    changed_price = client.patch(
+        f"/restaurants/{restaurant['id']}/menu/{dish['id']}", json={"price": 15.00}, headers=MANAGER
+    )
+    assert changed_price.status_code == 200
+    checkout = client.post("/checkout", headers=customer)
+    assert checkout.status_code == 201
+    order = checkout.json()
     assert (order["restaurant_id"], order["total"]) == (restaurant["id"], 30.00)
     assert order["items"] == [
         {"menu_item_id": dish["id"], "name": "Jollof Rice", "unit_price": 15.00, "quantity": 2, "line_total": 30.00}
     ]
 
-    client.patch(f"/restaurants/{restaurant['id']}/menu/{dish['id']}", json={"name": "Party Jollof"}, headers=MANAGER)
-    client.delete(f"/restaurants/{restaurant['id']}/menu/{dish['id']}", headers=MANAGER)
-    client.patch(f"/restaurants/{restaurant['id']}", json={"is_open": False}, headers=MANAGER)
+    renamed = client.patch(
+        f"/restaurants/{restaurant['id']}/menu/{dish['id']}", json={"name": "Party Jollof"}, headers=MANAGER
+    )
+    assert renamed.status_code == 200
+    assert client.delete(f"/restaurants/{restaurant['id']}/menu/{dish['id']}", headers=MANAGER).status_code == 200
+    assert client.patch(f"/restaurants/{restaurant['id']}", json={"is_open": False}, headers=MANAGER).status_code == 200
 
     assert client.get(f"/restaurants/{restaurant['id']}/menu").json() == []
     assert client.get(f"/orders/{order['id']}", headers=customer).json() == order
