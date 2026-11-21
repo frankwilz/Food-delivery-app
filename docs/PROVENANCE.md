@@ -7,7 +7,7 @@ This file records where the work in this repository came from: who wrote each pa
 | Member | Student # | GitHub |
 | --- | --- | --- |
 | Frank Williams | 23869407 | `frankwilz` |
-| Olutayo Akere | 27555010 | — |
+| Olutayo Akere | 27555010 | `tayo-ak` |
 | AbdulHaady Oludare | 81742678 | `Abdul138` |
 | Zay Lin Myat | 13187745 | `EuReKaA99` |
 
@@ -34,7 +34,7 @@ The information below comes from the repository's pull requests and git history 
 | #9 | Menu validation (409 duplicate name, 400 empty update), atomic file saves, error responses in `/docs`, README menu section and the menu-storage design decision | Zay Lin Myat | Zay Lin Myat | `app/services/menu_service.py`, `app/repositories/menu_item_repository.py`, `app/api/routes/menu.py`, `tests/test_menu.py`, `README.md` |
 | #11 | Restaurant CRUD: `GET /restaurants/{id}`, `POST /restaurants`, `PATCH /restaurants/{id}`, search and filters; `RestaurantCreate`/`RestaurantUpdate`, shared `ErrorResponse`, extra sample restaurants | Zay Lin Myat | Frank Williams | `app/api/routes/restaurants.py`, `app/services/restaurant_service.py`, `app/repositories/restaurant_repository.py`, `app/schemas/restaurant.py`, `app/schemas/error.py`, `data/restaurants.json`, `tests/test_restaurants.py`, `README.md` |
 | #12 | Testing, CI and integration: GitHub Actions workflow, vertical-slice and real-restart persistence tests, JSON 500 for data-file errors, `/health` response model, README updates | Frank Williams | AbdulHaady Oludare | `.github/workflows/tests.yml`, `tests/test_integration.py`, `app/main.py`, `app/schemas/health.py`, `README.md` |
-| — | Frontend: restaurant list, details, menu view, create/update form | _To be completed_ | — | _To be completed_ |
+| #14 | Frontend: restaurant list, details, menu view, create/update form; CORS for the frontend's origin (US4, #22) | Olutayo Akere | Zay Lin Myat | `frontend/index.html`, `app/main.py` |
 
 ## Milestone 2: Customer-to-order integration (5.2)
 
@@ -53,6 +53,29 @@ The existing order-retrieval implementation from commit `94c07ab` (PR #85, origi
 Previously checkout and order routes imported repository builders from the cart router, while other routers built separate services. Repository paths had to be patched in several modules during tests. All routes now obtain services from `app/api/dependencies.py`; repositories read their configured paths when constructed and FastAPI shares dependencies within a request. Services retain business rules and repositories retain file access.
 
 The trade-off is a central composition module that imports each subsystem. It keeps construction consistent and lets tests redirect all storage through one configuration module. Evidence is PR #88, `test_full_customer_to_order_workflow`, `test_customer_cart_and_order_persist_after_server_restarts` and the existing feature suite. Local validation: 477 tests passed, all five data files unchanged by tests, and the register → login → browse → cart → checkout → order-read workflow verified through Swagger UI on temporary data. Peer-review evidence will be recorded after review; this entry does not claim an approval or merge.
+
+## Olutayo Akere: Milestone 2
+
+| PR / branch | Work | Issue | Review status |
+| --- | --- | --- | --- |
+| [PR #95](https://github.com/frankwilz/Food-delivery-app/pull/95) | Per-file locks and `transaction(...)` so concurrent requests cannot lose or duplicate data (see the Decision Receipt below); `tests/test_concurrency.py` | Design improvement | Merged by Zay Lin Myat on 2026-11-20. No review comments are recorded on the PR. |
+| `tayo-5.6-service-tests` | `tests/test_services.py`: customer, cart and checkout services called directly, without HTTP | #54 (5.6) | PR to be opened; needs a teammate's review |
+| `tayo-5.7-repo-api-tests` | `tests/test_repositories.py` (customers, carts, orders on isolated files) and `tests/test_api_status_codes.py` (every documented status of every new endpoint, checked against `/docs`) | #55 (5.7) | PR to be opened; needs a teammate's review |
+| `tayo-5.8-integration-tests` | `tests/test_demo_scenarios.py` (demo scenarios and my cross-subsystem test), `tests/test_regressions.py`, restart test checks relationships, stricter CI data check | #56 (5.8) | PR to be opened; needs a teammate's review |
+| `tayo-frontend-polish` | Unavailable menu items marked as such, no manual rating on new restaurants, signed-in users redirected away from the sign-in and register pages | Frontend fixes | PR to be opened; needs a teammate's review |
+
+**Cross-subsystem test:** `test_new_restaurant_menu_changes_flow_through_cart_into_a_fixed_order` in `tests/test_demo_scenarios.py` (Auth → Restaurants → Menu → Customers → Cart → Checkout → Orders).
+
+## Decision Receipt: per-file locks for concurrent requests (Olutayo Akere)
+
+**Decision:** every JSON data file has one lock, and every check followed by a write runs while holding it.
+
+- **Before:** FastAPI runs routes in a thread pool, and every change reads a whole JSON file, changes it and writes it back, with no lock. Two requests at the same moment could both read the old file, and the second save silently erased the first. This could lose a cart quantity, give two records the same id, register one email twice, or turn a double-clicked **Place order** into two orders.
+- **After:** `app/repositories/json_repository.py` keeps one re-entrant lock per data file, shared by every repository for that file. `create` and `update` hold it for their whole read-modify-write. Services wrap each check followed by a write in `transaction(...)`: duplicate email, restaurant and menu-item checks; every cart change; and checkout, which locks the carts and orders files together. `transaction` always takes locks in the same order (sorted by file path), so two transactions cannot deadlock.
+- **Alternative considered:** moving to SQLite and using its transactions. Rejected for this milestone because it replaces the JSON storage the course requires; the repository layer would make that move possible later.
+- **Benefit:** no lost or duplicated data under concurrent requests; one cart always becomes exactly one order. Endpoints, status codes and responses are unchanged.
+- **Cost:** requests that change the same file now wait for each other. The locks work within one server process, which is how the app runs; several worker processes (`uvicorn --workers N`) would need file locks or a database.
+- **Evidence:** [PR #95](https://github.com/frankwilz/Food-delivery-app/pull/95), merged by Zay Lin Myat. `tests/test_concurrency.py` (12 tests) and `tests/test_regressions.py` start several requests at the same moment. With the locks turned off, 10 of the 12 concurrency tests and both regression tests fail. Key test: `test_concurrent_checkouts_of_one_cart_create_one_order`.
 
 ## Engineering design decision
 
@@ -96,7 +119,7 @@ _Members: add any other tutorials, Stack Overflow answers, course materials or c
 | Frank Williams | Claude Code (Anthropic) | Drafting PR #12: the data-storage error handler, the `/health` response model | Ran the full test suite locally (116 passed)|
 | AbdulHaady Oludare | Claude Code (Anthropic) | Used it to create menu tests and reviewed PR's  | Reviewed by 2 other teammates Frank and Zay|
 | Zay Lin Myat | Claude (Anthropic) | Used to draft and review Pull Request #11,Add restaurant get, create, update and search/filter | Run Test locally on local computer|
-| Olutayo Akere | _To be completed_ | | |
+| Olutayo Akere | Claude Code (Anthropic) | Suggested design improvements; implemented the per-file locks in PR #95 and their tests; wrote the 5.6–5.8 tests and frontend fixes on the branches listed under "Olutayo Akere: Milestone 2" | Ran the full test suite locally; disabled the locks to confirm the concurrency and regression tests fail without them; checked the frontend changes in a browser on a copy of the data; teammate review on each PR |
 ## Verification
 
 - `python -m pytest -q` passes locally: 116 tests.
