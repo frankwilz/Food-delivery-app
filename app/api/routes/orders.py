@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Path
 
 from app.api.dependencies import get_current_customer, get_order_service
 from app.schemas.error import ErrorResponse
@@ -36,7 +38,7 @@ def list_orders(customer: dict = Depends(get_current_customer), service: OrderSe
     responses={**SIGNED_IN, 404: {"model": ErrorResponse, "description": "No such order for this customer"}},
 )
 def get_order(
-    order_id: int,
+    order_id: Annotated[int, Path(description="The identifier of an order belonging to the signed-in customer.")],
     customer: dict = Depends(get_current_customer),
     service: OrderService = Depends(get_order_service),
 ):
