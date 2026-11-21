@@ -1,11 +1,3 @@
-"""5.6 (#54): service-layer tests for the customer, cart and checkout services.
-
-Every test here calls a service directly, built from repositories on the temporary data files
-(`tests/conftest.py`). There is no `TestClient` and no HTTP: these check the business rules
-themselves, so they would still hold if the API layer changed. The HTTP behaviour of the same
-rules is covered in test_customers.py, test_cart.py and test_checkout.py.
-"""
-
 import json
 from decimal import Decimal
 
@@ -26,11 +18,9 @@ from app.services.checkout_service import CheckoutService, EmptyCartError, Resta
 from app.services.customer_service import CustomerNotFoundError, CustomerService, DuplicateEmailError
 from app.services.menu_service import MenuItemUnavailableError, MenuService
 
-# From data/customers.json, data/restaurants.json and data/menu_items.json
 ANA_ID, BEN_ID, CHLOE_DEACTIVATED_ID = 1, 2, 3
-PIZZA, SALAD = 1, 2  # restaurant 1 (open): 16.99 and 9.49
-CRUNCHWRAP = 4  # restaurant 2: 6.49
-CLOSED_RESTAURANT = 3
+PIZZA, SALAD = 1, 2
+CRUNCHWRAP = 4
 
 
 @pytest.fixture
@@ -84,9 +74,6 @@ def add(carts: CartService, item_id: int, quantity: int = 1, customer_id: int = 
     return carts.add_item(customer_id, CartItemAdd(menu_item_id=item_id, quantity=quantity))
 
 
-# --- CustomerService ---
-
-
 def test_register_saves_a_customer_with_a_hashed_password(customers):
     customer = customers.register(new_customer())
 
@@ -131,9 +118,6 @@ def test_get_active_customer_unknown_id(customers):
         customers.get_active_customer(999)
 
 
-# --- CartService: successful operations ---
-
-
 def test_add_update_and_remove_items(carts):
     add(carts, PIZZA)
     add(carts, SALAD, 2)
@@ -155,9 +139,6 @@ def test_clear_for_customer_empties_only_that_customers_cart(carts):
     assert [line["menu_item_id"] for line in carts.get_cart(BEN_ID)["items"]] == [SALAD]
 
 
-# --- CartService: business rules ---
-
-
 @pytest.mark.parametrize(
     "operation",
     [
@@ -172,7 +153,6 @@ def test_clear_for_customer_empties_only_that_customers_cart(carts):
 def test_every_cart_operation_refuses_a_deactivated_customer(carts, operation):
     with pytest.raises(ForbiddenError):
         operation(carts)
-    # Refused before anything is written, so not even an empty cart is created
     assert read(config.CARTS_FILE) == []
 
 
@@ -186,9 +166,6 @@ def test_update_quantity_of_an_item_not_in_the_cart(carts):
 
     with pytest.raises(ItemNotInCartError):
         carts.update_quantity(ANA_ID, SALAD, 2)
-
-
-# --- CartService: calculation ---
 
 
 def test_priced_cart_uses_current_menu_prices(carts):
@@ -230,16 +207,13 @@ def test_priced_cart_marks_an_item_that_became_unavailable(carts, menu):
     assert lines == {PIZZA: True, SALAD: False}
 
 
-# --- CartService: state consistency ---
-
-
 def test_cart_restaurant_follows_its_items(carts):
     assert carts.get_cart(ANA_ID)["restaurant_id"] is None
     assert add(carts, PIZZA)["restaurant_id"] == 1
     assert add(carts, SALAD)["restaurant_id"] == 1
-    assert carts.remove_item(ANA_ID, PIZZA)["restaurant_id"] == 1  # one item is left
-    assert carts.remove_item(ANA_ID, SALAD)["restaurant_id"] is None  # empty again
-    assert add(carts, CRUNCHWRAP)["restaurant_id"] == 2  # so another restaurant is now allowed
+    assert carts.remove_item(ANA_ID, PIZZA)["restaurant_id"] == 1
+    assert carts.remove_item(ANA_ID, SALAD)["restaurant_id"] is None
+    assert add(carts, CRUNCHWRAP)["restaurant_id"] == 2
 
 
 def test_a_refused_change_leaves_the_stored_cart_unchanged(carts):
@@ -249,7 +223,7 @@ def test_a_refused_change_leaves_the_stored_cart_unchanged(carts):
     with pytest.raises(DifferentRestaurantError):
         add(carts, CRUNCHWRAP)
     with pytest.raises(MenuItemUnavailableError):
-        add(carts, 3)  # Chicken Wings are unavailable
+        add(carts, 3)
 
     assert read(config.CARTS_FILE) == before
 
@@ -269,9 +243,6 @@ def test_stored_cart_holds_only_ids_and_quantities(carts):
 
     (stored,) = read(config.CARTS_FILE)
     assert stored["items"] == [{"menu_item_id": PIZZA, "quantity": 2}]
-
-
-# --- CheckoutService: validation ---
 
 
 def test_checkout_with_no_cart_is_refused_and_creates_nothing(checkout):
@@ -320,9 +291,6 @@ def test_deactivated_customer_cannot_check_out(customers, carts, checkout):
     assert read(config.ORDERS_FILE) == []
 
 
-# --- CheckoutService: order creation ---
-
-
 def test_checkout_creates_an_order_matching_the_priced_cart(carts, checkout):
     add(carts, PIZZA, 2)
     add(carts, SALAD, 1)
@@ -345,7 +313,7 @@ def test_checkout_closes_the_cart_and_the_next_cart_is_new(carts, checkout):
 
     closed = CartRepository(config.CARTS_FILE).get_by_id(order["cart_id"])
     assert closed["status"] == "checked_out"
-    assert closed["items"] == [{"menu_item_id": PIZZA, "quantity": 1}]  # kept as a record
+    assert closed["items"] == [{"menu_item_id": PIZZA, "quantity": 1}]
 
     fresh = carts.get_cart(ANA_ID)
     assert fresh["id"] != order["cart_id"] and fresh["items"] == []
