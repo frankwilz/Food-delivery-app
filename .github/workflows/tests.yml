@@ -42,8 +42,6 @@ jobs:
       - name: Run tests
         run: python -m pytest -v
 
-      # All five data files must be exactly as committed: none changed, deleted or added
-      # (git diff alone does not notice a new, untracked file such as a stray temp save)
       - name: Check committed data was not modified by the tests
         run: |
           git diff --exit-code -- data/

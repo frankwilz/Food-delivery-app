@@ -15,7 +15,6 @@ DATA = BASE_DIR / "data"
 
 
 def test_representative_data_has_valid_relationships_and_totals():
-    # All five committed files: schemas, unique ids, links between records, and order totals
     data = load_and_check(DATA)
     for name, records in data.items():
         assert records, f"{name}.json has no representative records"

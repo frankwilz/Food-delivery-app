@@ -1,10 +1,3 @@
-"""Checks that a folder of the five JSON data files is valid and consistent.
-
-Shared by the committed-data test (test_workflow.py) and the restart test (test_integration.py),
-so the data a real server leaves behind meets the same rules as the committed demo data.
-Originally written inline in test_workflow.py (5.2, #50); moved here for 5.8 (#56).
-"""
-
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -25,7 +18,6 @@ SCHEMAS = {
 
 
 def load_and_check(data_dir: Path) -> dict[str, dict[int, dict]]:
-    """Assert every record and relationship in `data_dir` is valid; return the records by file and id."""
     data = {}
     for name, schema in SCHEMAS.items():
         records = json.loads((data_dir / f"{name}.json").read_text(encoding="utf-8"))
@@ -44,7 +36,7 @@ def load_and_check(data_dir: Path) -> dict[str, dict[int, dict]]:
             active_customers.append(cart["customer_id"])
         assert cart["restaurant_id"] in data["restaurants"] if cart["items"] else cart["restaurant_id"] is None
         for line in cart["items"]:
-            assert set(line) == {"menu_item_id", "quantity"}  # Prices belong to the menu or order snapshot.
+            assert set(line) == {"menu_item_id", "quantity"}
             assert type(line["quantity"]) is int and 1 <= line["quantity"] <= MAX_QUANTITY
             assert data["menu_items"][line["menu_item_id"]]["restaurant_id"] == cart["restaurant_id"]
     assert len(active_customers) == len(set(active_customers)), "a customer has two active carts"

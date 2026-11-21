@@ -297,8 +297,6 @@ def test_customer_cart_and_order_persist_after_server_restarts(tmp_path):
     saved_carts = json.loads((data_dir / "carts.json").read_text(encoding="utf-8"))
     assert next(row for row in saved_carts if row["id"] == cart["id"])["status"] == "checked_out"
 
-    # 5.8 (#56): everything the server saved across the restarts still fits together: the new
-    # customer, cart and order link to real records, one active cart each, one order per cart
     saved = load_and_check(data_dir)
     assert saved["orders"][order["id"]]["cart_id"] == cart["id"]
     assert saved["carts"][cart["id"]]["customer_id"] == customer["id"]

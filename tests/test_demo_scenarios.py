@@ -1,12 +1,3 @@
-"""5.8 (#56): one test per demo scenario, plus a cross-subsystem test.
-
-Every test goes through the real HTTP API (route -> service -> repository -> JSON) on the
-temporary data from `tests/conftest.py`, the same way the demo is run in `/docs`.
-
-Demo scenarios: deactivated customer, unavailable item, invalid quantity, mixed restaurants,
-unauthorized request, and a price/availability change before checkout.
-"""
-
 import json
 
 import pytest
@@ -15,8 +6,8 @@ from app.core import config
 from app.core.security import create_access_token
 
 ANA_ID, MANAGER_ID = 1, 4
-PIZZA, SALAD, WINGS_UNAVAILABLE = 1, 2, 3  # restaurant 1: 16.99, 9.49, unavailable
-CRUNCHWRAP = 4  # restaurant 2: 6.49
+PIZZA, SALAD, WINGS_UNAVAILABLE = 1, 2, 3
+CRUNCHWRAP = 4
 
 
 def bearer(customer_id: int) -> dict:
@@ -42,43 +33,32 @@ def register_and_login(client, email: str) -> dict:
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
-# --- Demo scenario 1: deactivated customer ---
-
-
 def test_demo_deactivated_customer_is_locked_out_everywhere(client):
     headers = register_and_login(client, "leaving@example.com")
     assert add(client, PIZZA, headers=headers).status_code == 200
 
     assert client.post("/customers/me/deactivate", headers=headers).status_code == 200
 
-    # The token issued before deactivation stops working at once, on every customer endpoint
     for method, path in [("GET", "/customers/me"), ("GET", "/cart"), ("POST", "/checkout"), ("GET", "/orders")]:
         response = client.request(method, path, headers=headers)
         assert response.status_code == 403, path
     assert add(client, SALAD, headers=headers).status_code == 403
     login = client.post("/auth/login", json={"email": "leaving@example.com", "password": "demo-password-1"})
     assert login.status_code == 403
-    # The email stays taken, and no order was placed from the abandoned cart
     again = {"name": "X", "email": "leaving@example.com", "password": "demo-password-1", "delivery_address": "X"}
     assert client.post("/customers", json=again).status_code == 409
     assert stored(config.ORDERS_FILE) == []
 
 
-# --- Demo scenario 2: unavailable item ---
-
-
 def test_demo_unavailable_item_is_listed_but_cannot_be_ordered(client):
     menu = {item["id"]: item for item in client.get("/restaurants/1/menu").json()}
-    assert menu[WINGS_UNAVAILABLE]["is_available"] is False  # still shown on the menu
+    assert menu[WINGS_UNAVAILABLE]["is_available"] is False
 
     response = add(client, WINGS_UNAVAILABLE)
 
     assert response.status_code == 409
     assert "Chicken Wings" in response.json()["detail"]
     assert client.get("/cart", headers=ANA).json()["items"] == []
-
-
-# --- Demo scenario 3: invalid quantity ---
 
 
 @pytest.mark.parametrize("quantity", [0, -1, 100, 1.5, "two", None])
@@ -94,13 +74,10 @@ def test_demo_invalid_quantity_is_rejected_and_changes_nothing(client, quantity)
 def test_demo_quantity_above_the_maximum_in_total_is_rejected(client):
     add(client, PIZZA, 60)
 
-    response = add(client, PIZZA, 40)  # each request is valid, but 100 in total is over the 99 limit
+    response = add(client, PIZZA, 40)
 
     assert response.status_code == 400
     assert client.get("/cart", headers=ANA).json()["items"][0]["quantity"] == 60
-
-
-# --- Demo scenario 4: mixed restaurants ---
 
 
 def test_demo_one_cart_cannot_mix_restaurants(client):
@@ -113,12 +90,8 @@ def test_demo_one_cart_cannot_mix_restaurants(client):
     cart = client.get("/cart", headers=ANA).json()
     assert cart["restaurant_id"] == 1 and [line["menu_item_id"] for line in cart["items"]] == [PIZZA]
 
-    # Clearing the cart frees it for another restaurant
     assert client.delete("/cart", headers=ANA).status_code == 200
     assert add(client, CRUNCHWRAP).json()["restaurant_id"] == 2
-
-
-# --- Demo scenario 5: unauthorized request ---
 
 
 @pytest.mark.parametrize(
@@ -140,16 +113,13 @@ def test_demo_customer_cannot_use_manager_endpoints(client):
     assert client.get(f"/restaurants/1/menu/{PIZZA}").json()["price"] == 16.99
 
 
-# --- Demo scenario 6: price/availability change before checkout ---
-
-
 def test_demo_price_change_before_checkout_charges_the_new_price(client):
     add(client, PIZZA, 2)
     assert client.get("/cart", headers=ANA).json()["total"] == 33.98
 
     assert client.patch(f"/restaurants/1/menu/{PIZZA}", json={"price": 18.50}, headers=MANAGER).status_code == 200
 
-    assert client.get("/cart", headers=ANA).json()["total"] == 37.00  # the cart shows the change first
+    assert client.get("/cart", headers=ANA).json()["total"] == 37.00
     order = client.post("/checkout", headers=ANA).json()
     assert order["items"][0]["unit_price"] == 18.50 and order["total"] == 37.00
 
@@ -168,18 +138,7 @@ def test_demo_item_made_unavailable_before_checkout_blocks_it_until_available(cl
     assert client.post("/checkout", headers=ANA).status_code == 201
 
 
-# --- Cross-subsystem test ---
-
-
 def test_new_restaurant_menu_changes_flow_through_cart_into_a_fixed_order(client):
-    """Cross-subsystem test (5.8, #56).
-
-    Crosses every subsystem: Auth -> Restaurants -> Menu -> Customers -> Cart -> Checkout -> Orders.
-    A manager opens a new restaurant and adds a dish; a newly registered customer finds it by
-    search, orders it after the manager changes the price, and the saved order then stays
-    exactly as it was while the manager renames the dish, removes it and closes the restaurant.
-    """
-    # Manager: a new restaurant with one dish
     restaurant = client.post(
         "/restaurants", json={"name": "Lagos Kitchen", "cuisine": "Nigerian", "address": "8 Jollof Lane"}, headers=MANAGER
     ).json()
@@ -189,7 +148,6 @@ def test_new_restaurant_menu_changes_flow_through_cart_into_a_fixed_order(client
         headers=MANAGER,
     ).json()
 
-    # Customer: registers, signs in and finds the new restaurant by search
     customer = register_and_login(client, "hungry@example.com")
     found = client.get("/restaurants", params={"search": "nigerian", "is_open": True}).json()
     assert [r["id"] for r in found] == [restaurant["id"]]
@@ -198,7 +156,6 @@ def test_new_restaurant_menu_changes_flow_through_cart_into_a_fixed_order(client
     add(client, dish["id"], 2, headers=customer)
     assert client.get("/cart", headers=customer).json()["total"] == 28.50
 
-    # Manager raises the price before checkout: the order uses the new, current price
     client.patch(f"/restaurants/{restaurant['id']}/menu/{dish['id']}", json={"price": 15.00}, headers=MANAGER)
     order = client.post("/checkout", headers=customer).json()
     assert (order["restaurant_id"], order["total"]) == (restaurant["id"], 30.00)
@@ -206,12 +163,11 @@ def test_new_restaurant_menu_changes_flow_through_cart_into_a_fixed_order(client
         {"menu_item_id": dish["id"], "name": "Jollof Rice", "unit_price": 15.00, "quantity": 2, "line_total": 30.00}
     ]
 
-    # Later menu and restaurant changes never reach the saved order
     client.patch(f"/restaurants/{restaurant['id']}/menu/{dish['id']}", json={"name": "Party Jollof"}, headers=MANAGER)
     client.delete(f"/restaurants/{restaurant['id']}/menu/{dish['id']}", headers=MANAGER)
     client.patch(f"/restaurants/{restaurant['id']}", json={"is_open": False}, headers=MANAGER)
 
-    assert client.get(f"/restaurants/{restaurant['id']}/menu").json() == []  # dish is off the menu
+    assert client.get(f"/restaurants/{restaurant['id']}/menu").json() == []
     assert client.get(f"/orders/{order['id']}", headers=customer).json() == order
     assert client.get("/orders", headers=customer).json() == [order]
-    assert client.get("/cart", headers=customer).json()["items"] == []  # a fresh cart after checkout
+    assert client.get("/cart", headers=customer).json()["items"] == []
