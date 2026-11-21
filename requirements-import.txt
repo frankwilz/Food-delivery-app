@@ -1,0 +1,2 @@
+# Optional, one-time catalog importer; not needed by the running API or CI.
+kagglehub[pandas-datasets]==1.0.3

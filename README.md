@@ -105,6 +105,31 @@ Then walk through **Restaurant List → Search / Filter → Restaurant Details �
 
 After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with the same `DATA_DIR`. The new restaurant is still there, because it was saved to `restaurants.json`. The API side of search and filter (`?search=`, `?cuisine=`, `?is_open=`, `?min_rating=`) can be shown in `/docs`.
 
+### Import 100 more restaurants from Kaggle
+
+The optional importer loads `doordash.csv` from [polartech's DoorDash Restaurant Data](https://www.kaggle.com/datasets/polartech/doordash-restaurant-data), using the [KaggleHub Pandas adapter](https://github.com/Kaggle/kagglehub#kaggledatasetadapterpandas). It selects the first **100 valid, unique restaurants** by default. Downloads happen only when you run the command; browsing the app does not require Kaggle, Pandas or network access.
+
+Stop the backend before importing. From the project root with the virtual environment activated:
+
+```bash
+python -m pip install -r requirements-import.txt
+catalog_dir=$(mktemp -d)
+cp data/*.json "$catalog_dir/"
+python -m app.import_restaurants --data-dir "$catalog_dir" --demo-menus --dry-run
+python -m app.import_restaurants --data-dir "$catalog_dir" --demo-menus
+DATA_DIR="$catalog_dir" python -m uvicorn app.main:app --reload
+```
+
+Keep this data directory to retain the imported catalog across restarts. The existing frontend now lists up to **104 restaurants**, including the four original examples. To enrich your existing working data instead, supply its directory with `--data-dir`. A downloaded file also works offline: `python -m app.import_restaurants --csv /path/to/doordash.csv --data-dir "$catalog_dir" --demo-menus`. Increase `--limit` to expand the selection. Repeating the same import selects the same source identities instead of adding the next batch; existing restaurant IDs and details are retained. Invalid rows and duplicates are counted in the summary. Customers, carts and orders are untouched.
+
+`--demo-menus` makes imported restaurants orderable with **three fictional, cuisine-based sample dishes and positive dollar prices per restaurant**. These dishes and prices are authored project demo content, not the restaurants' actual menus or offers and not supplied by Kaggle or DoorDash. Names start with **Demo** and descriptions with **Demo menu:** so the distinction stays visible in the app. The importer opens a newly seeded restaurant only after all three menu items are saved, using the normal menu and restaurant services.
+
+The flag works both on a fresh import and on the same first 100 restaurants imported previously. It only targets the bounded source selection by name/address identity; it does not sweep all other custom restaurants. The four committed example identities and all existing menus, including inactive items, are left untouched. Restaurants with an existing menu are skipped entirely, so reruns do not duplicate dishes or reopen a restaurant you manually closed later. An existing empty restaurant that matches a selected source identity is included in this explicit opt-in. If a write fails partway through a new menu, the restaurant stays closed; inspect that partial menu manually rather than expecting a rerun to overwrite it. `--dry-run --demo-menus` previews restaurant additions, menu items and openings without writing any data files.
+
+Column mapping: `loc_name` → name, `address` → address, the first nonempty food/category tag in `cuisines` → cuisine, and `review_rating` → rating (blank ratings become 0). Tags `Alcohol`, `Black Owned` and `Delivery` are skipped when choosing a cuisine. Rows tagged Convenience, Grocery, Florist, Personal Care, Pet Stores or Liquor Store are excluded so retail shops do not become restaurants. The app's existing schema validates lengths and ratings. Without `--demo-menus`, behavior is unchanged: imported restaurants start closed with no menu, because the source establishes neither live availability nor app menu items. A manager can add items through **Add menu item**, then use `PATCH /restaurants/{restaurant_id}` with `{"is_open": true}` in `/docs` to open it. With `--demo-menus`, opening a restaurant means it is enabled for this project's simulated ordering workflow, not that it is currently open on DoorDash.
+
+Source record: dataset version **1**, published April 29, 2022, inspected November 20, 2026; Kaggle's metadata identifies BarkingData and lists the license as **Unknown**. External records are downloaded locally and are not committed to this repository. The inspected `doordash.csv` SHA-256 is `a38f71c1669425e898fa080c4934aefd57e6ef590711220f2aab145b3f348ff9`. The pinned version makes the selection reproducible; this historical catalog does not establish current DoorDash availability or delivery coverage.
+
 ## API Endpoints
 
 | Method | Path | Purpose |
