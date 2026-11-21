@@ -105,6 +105,27 @@ Then walk through **Restaurant List → Search / Filter → Restaurant Details �
 
 After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with the same `DATA_DIR`. The new restaurant is still there, because it was saved to `restaurants.json`. The API side of search and filter (`?search=`, `?cuisine=`, `?is_open=`, `?min_rating=`) can be shown in `/docs`.
 
+### Import 100 more restaurants from Kaggle
+
+The optional importer loads `doordash.csv` from [polartech's DoorDash Restaurant Data](https://www.kaggle.com/datasets/polartech/doordash-restaurant-data), using the [KaggleHub Pandas adapter](https://github.com/Kaggle/kagglehub#kaggledatasetadapterpandas). It selects the first **100 valid, unique restaurants** by default. Downloads happen only when you run the command; browsing the app does not require Kaggle, Pandas or network access.
+
+Stop the backend before importing. From the project root with the virtual environment activated:
+
+```bash
+python -m pip install -r requirements-import.txt
+catalog_dir=$(mktemp -d)
+cp data/*.json "$catalog_dir/"
+python -m app.import_restaurants --data-dir "$catalog_dir" --dry-run
+python -m app.import_restaurants --data-dir "$catalog_dir"
+DATA_DIR="$catalog_dir" python -m uvicorn app.main:app --reload
+```
+
+Keep this data directory to retain the imported catalog across restarts. The existing frontend now lists up to **104 restaurants**, including the four original examples. To enrich your existing working data instead, supply its directory with `--data-dir`. A downloaded file also works offline: `python -m app.import_restaurants --csv /path/to/doordash.csv --data-dir "$catalog_dir"`. Increase `--limit` to expand the selection. Repeating the same import skips existing restaurants, without adding a new batch or changing existing records/IDs. Invalid rows and duplicates are counted in the summary; customers, menus, carts and orders are untouched.
+
+Column mapping: `loc_name` → name, `address` → address, the first nonempty food/category tag in `cuisines` → cuisine, and `review_rating` → rating (blank ratings become 0). Tags `Alcohol`, `Black Owned` and `Delivery` are skipped when choosing a cuisine. Rows tagged Convenience, Grocery, Florist, Personal Care, Pet Stores or Liquor Store are excluded so retail shops do not become restaurants. The app's existing schema validates lengths and ratings. Imported restaurants start with `is_open=false`: the source has no live availability or menu items, so a manager must add a menu and open the restaurant before it can accept orders. Add items through the manager's **Add menu item** form, then authorize as a manager in `/docs` and use `PATCH /restaurants/{restaurant_id}` with `{"is_open": true}`. The existing empty-menu message is shown meanwhile.
+
+Source record: dataset version **1**, published April 29, 2022, inspected November 20, 2026; Kaggle's metadata identifies BarkingData and lists the license as **Unknown**. External records are downloaded locally and are not committed to this repository. The inspected `doordash.csv` SHA-256 is `a38f71c1669425e898fa080c4934aefd57e6ef590711220f2aab145b3f348ff9`. The pinned version makes the selection reproducible; this historical catalog does not establish current DoorDash availability or delivery coverage.
+
 ## API Endpoints
 
 | Method | Path | Purpose |

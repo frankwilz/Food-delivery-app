@@ -103,7 +103,7 @@ function renderChips() {
 async function showHome(viewVersion) {
   $("searchWrap").hidden = false;
   app.textContent = "";
-  app.append(el("h1", {}, "Restaurants near you"), el("div", { class: "chips", id: "chips" }), el("div", { id: "gridHolder" }));
+  app.append(el("h1", {}, "Browse restaurants"), el("div", { class: "chips", id: "chips" }), el("div", { id: "gridHolder" }));
   $("gridHolder").append(el("div", { class: "grid" }, [1, 2, 3, 4, 5, 6].map(() => el("div", { class: "skeleton" }))));
   try {
     if (!state.restaurants) await loadRestaurants();
