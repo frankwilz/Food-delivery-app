@@ -1,11 +1,3 @@
-"""5.7 (#55): repository tests for customers, carts and orders.
-
-Each repository is tested on its own, without the API or a service, on an isolated temporary
-file (`tmp_path`). The same checks run against all three, so they cannot drift apart:
-correct load and save, ids that stay stable after the file is reloaded by a new repository,
-and atomic saves that leave no temporary files behind.
-"""
-
 import json
 
 import pytest
@@ -53,7 +45,6 @@ REPOSITORIES = [
 
 @pytest.fixture
 def data_file(tmp_path):
-    # Its own folder: tmp_path also holds conftest's copies of the five data files
     (tmp_path / "repository").mkdir()
     path = tmp_path / "repository" / "records.json"
     path.write_text("[]\n", encoding="utf-8")
@@ -62,9 +53,6 @@ def data_file(tmp_path):
 
 def stored(path) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-# --- Shared behaviour, run against every repository ---
 
 
 @pytest.mark.parametrize(("repository_class", "make"), REPOSITORIES)
@@ -86,7 +74,7 @@ def test_ids_start_at_1_and_count_up(repository_class, make, data_file):
 def test_records_and_ids_are_stable_after_reload(repository_class, make, data_file):
     created = [repository_class(data_file).create(make(n)) for n in (1, 2, 3)]
 
-    reloaded = repository_class(data_file)  # a new object reads the file again, as after a restart
+    reloaded = repository_class(data_file)
 
     assert reloaded.get_all() == created
     for record in created:
@@ -95,7 +83,6 @@ def test_records_and_ids_are_stable_after_reload(repository_class, make, data_fi
 
 @pytest.mark.parametrize(("repository_class", "make"), REPOSITORIES)
 def test_new_id_follows_the_highest_id_after_reload(repository_class, make, data_file):
-    # A gap (e.g. a hand-edited file) must not cause a repeated id: max + 1, not count + 1
     data_file.write_text(json.dumps([{"id": 1, **make(1)}, {"id": 7, **make(2)}]), encoding="utf-8")
 
     assert repository_class(data_file).create(make(3))["id"] == 8
@@ -144,9 +131,6 @@ def test_each_repository_only_touches_its_own_file(repository_class, make, tmp_p
     assert stored(other) == []
 
 
-# --- CustomerRepository ---
-
-
 def test_customer_update_persists_and_never_changes_the_id(data_file):
     repository = CustomerRepository(data_file)
     repository.create(customer(1))
@@ -164,9 +148,6 @@ def test_customer_get_by_email_ignores_case_and_spaces(data_file):
 
     assert repository.get_by_email("  CUSTOMER1@Example.com ") == created
     assert repository.get_by_email("nobody@example.com") is None
-
-
-# --- CartRepository ---
 
 
 def test_cart_update_persists_and_never_changes_id_or_owner(data_file):
@@ -196,11 +177,7 @@ def test_active_cart_lookup_ignores_checked_out_carts_after_reload(data_file):
     assert CartRepository(data_file).get_active_for_customer(1) == active
 
 
-# --- OrderRepository ---
-
-
 def test_orders_are_append_only():
-    # Orders are snapshots: there is deliberately no way to change or remove one
     assert not hasattr(OrderRepository, "update")
     assert not hasattr(OrderRepository, "delete")
 

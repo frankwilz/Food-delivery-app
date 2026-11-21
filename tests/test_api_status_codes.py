@@ -1,16 +1,3 @@
-"""5.7 (#55): every new endpoint returns exactly the status codes `/docs` lists.
-
-`CASES` sends one real request per (endpoint, status code): successes, the common 400/404/409/422
-errors, and the 401 (no token) and 403 (deactivated account) auth failures. Two checks use it:
-
-- each request returns its expected code, and that code is listed for the endpoint in `/docs`;
-- every code `/docs` lists for these endpoints is produced by at least one case, so the
-  documentation cannot promise a response that no test has ever seen. 500 is the exception: it is
-  shared by every endpoint and tested in test_integration.py with corrupt and missing data files.
-
-Errors must also use the shared `{"detail": ...}` shape.
-"""
-
 import json
 
 import pytest
@@ -31,9 +18,6 @@ NEW_CUSTOMER = {
     "password": "a-long-password",
     "delivery_address": "1 Status Street",
 }
-
-
-# --- Setup steps some cases need before their request ---
 
 
 def add_pizza(client, quantity=1):
@@ -65,9 +49,7 @@ def bearer(who):
     return {"Authorization": f"Bearer {create_access_token(TOKENS[who])}"} if who else {}
 
 
-# (method, path, who is signed in, JSON body, setup, expected status)
 CASES = [
-    # Customers
     ("POST", "/customers", None, NEW_CUSTOMER, None, 201),
     ("POST", "/customers", None, {**NEW_CUSTOMER, "email": "ana.souza@example.com"}, None, 409),
     ("POST", "/customers", None, {**NEW_CUSTOMER, "email": "not-an-email"}, None, 422),
@@ -83,12 +65,10 @@ CASES = [
     ("POST", "/customers/me/deactivate", "ana", None, None, 200),
     ("POST", "/customers/me/deactivate", None, None, None, 401),
     ("POST", "/customers/me/deactivate", "chloe", None, None, 403),
-    # Login
     ("POST", "/auth/login", None, {"email": "ana.souza@example.com", "password": "Ana-demo-2026"}, None, 200),
     ("POST", "/auth/login", None, {"email": "ana.souza@example.com", "password": "wrong-password"}, None, 401),
     ("POST", "/auth/login", None, {"email": "chloe.martin@example.com", "password": "Chloe-demo-2026"}, None, 403),
     ("POST", "/auth/login", None, {"email": "ana.souza@example.com"}, None, 422),
-    # Cart
     ("GET", "/cart", "ana", None, None, 200),
     ("GET", "/cart", None, None, None, 401),
     ("GET", "/cart", "chloe", None, None, 403),
@@ -112,14 +92,12 @@ CASES = [
     ("DELETE", f"/cart/items/{PIZZA}", "chloe", None, None, 403),
     ("DELETE", f"/cart/items/{PIZZA}", "ana", None, None, 404),
     ("DELETE", "/cart/items/not-a-number", "ana", None, None, 422),
-    # Checkout
     ("POST", "/checkout", "ana", None, add_pizza, 201),
     ("POST", "/checkout", "ana", None, None, 400),
     ("POST", "/checkout", None, None, None, 401),
     ("POST", "/checkout", "chloe", None, None, 403),
     ("POST", "/checkout", "ana", None, cart_from_a_deleted_restaurant, 404),
     ("POST", "/checkout", "ana", None, cart_from_a_restaurant_that_closed, 409),
-    # Orders
     ("GET", "/orders", "ana", None, place_an_order, 200),
     ("GET", "/orders", None, None, None, 401),
     ("GET", "/orders", "chloe", None, None, 403),
@@ -141,7 +119,6 @@ def documented_codes() -> dict[tuple[str, str], set[int]]:
 
 
 def template_of(path: str) -> str:
-    """The `/docs` path for a concrete one, e.g. /orders/1 -> /orders/{order_id}."""
     parts = path.strip("/").split("/")
     for template in TestClient(app).get("/openapi.json").json()["paths"]:
         template_parts = template.strip("/").split("/")
@@ -166,7 +143,7 @@ def test_endpoint_returns_its_documented_status(client, method, path, who, body,
     assert response.status_code == expected, response.text
     assert expected in documented_codes()[(method, template_of(path))]
     if expected >= 400:
-        assert "detail" in response.json()  # the shared error shape
+        assert "detail" in response.json()
     if expected == 401:
         assert response.headers["WWW-Authenticate"] == "Bearer"
 
