@@ -4,6 +4,8 @@
 
 Food Delivery App is a team project. Milestone 2 connects customer accounts, restaurant/menu browsing, a shopping cart, checkout and private order history through a FastAPI backend and browser frontend. Requests follow route → service → repository → JSON, with Pydantic request/response models and automated CI checks. The [M2 summary and demo script](docs/milestones/M2.md) records implementation evidence and remaining team/submission work; the [Decision Receipt M2.3](docs/decision-receipt-m2.md) explains the integration design.
 
+The current website has a **lime-green food-photo homepage**, restaurant search, illustrated restaurant/menu cards and customer ordering. Follow [Run the Frontend](#run-the-frontend) to prepare a fresh expanded demo catalog with **104 restaurants and 305 menu items**, including 300 fictional demo items for the imported restaurants.
+
 **Team name:** Abdul & Friends
 
 **Project board:** https://github.com/users/frankwilz/projects/2
@@ -22,6 +24,16 @@ Clone the repository and enter the project directory:
 git clone https://github.com/frankwilz/Food-delivery-app.git
 cd Food-delivery-app
 ```
+
+For an existing clone, update to the reviewed version on `main` before starting:
+
+```bash
+git fetch origin
+git switch main
+git pull --ff-only origin main
+```
+
+Open this same project folder in VS Code. A feature branch that already includes current `main` also works. The `m1-vertical-slice` tag stays at Milestone 1; running that checkout serves the earlier website.
 
 Create and activate a virtual environment.
 
@@ -48,28 +60,80 @@ python -m pip install -r requirements.txt
 
 ## Run the Application
 
-Start the development server from the repository root:
+For API-only development with the committed starter data, start the server from the repository root after activating the virtual environment:
 
 ```bash
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The API is available at `http://127.0.0.1:8000` by default. Stop the server with `Ctrl+C`.
+The API is available at `http://127.0.0.1:8000`. The committed starter catalog has four restaurants and five menu items. For the expanded website, use the launch sequence below. Stop an existing API run with `Ctrl+C` before preparing/importing data or starting another server on port 8000.
 
 ## Run the Frontend
 
 The frontend is a single page that calls the REST API with `fetch`. `index.js` handles browsing/navigation, `api.mjs` handles HTTP/session state, `account.mjs` renders account forms, and `shopping.mjs` renders ordering views. It has no build step or third-party JavaScript dependencies.
 
-1. Start the backend as shown above, on port `8000`.
-2. In a **second terminal**, serve the frontend from the repository root on port `5500`:
+### Launch the updated website in VS Code
+
+Use two terminals in the **same project folder**. Complete Setup first. The following macOS/Linux commands prepare a persistent demo catalog beside the repository and start the latest storefront.
+
+**Terminal 1 — prepare the expanded catalog and run the API:**
+
+```bash
+source .venv/bin/activate
+python -m pip install -r requirements.txt -r requirements-import.txt
+catalog_dir="../food-delivery-demo-data"
+if [ ! -d "$catalog_dir" ]; then
+    mkdir -p "$catalog_dir"
+    cp data/*.json "$catalog_dir/"
+fi
+python -m app.import_restaurants --data-dir "$catalog_dir" --demo-menus --dry-run
+python -m app.import_restaurants --data-dir "$catalog_dir" --demo-menus
+export DATA_DIR="$catalog_dir"
+if [ ! -f "$catalog_dir/.secret-key" ]; then
+    (
+        umask 077
+        python -c 'import secrets; print(secrets.token_hex(32))' > "$catalog_dir/.secret-key"
+    )
+fi
+export SECRET_KEY="$(cat "$catalog_dir/.secret-key")"
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+The first run downloads the pinned Kaggle dataset and adds 100 restaurants with three sample menu items each. The sibling directory is initialized only if it does not exist, so rerunning these commands preserves its accounts, carts and orders. Repeated imports skip existing records/menus. The signing key is generated once in the sibling directory's private `.secret-key` file, outside Git. Keep this directory for future runs; reuse its `DATA_DIR` and signing key when restarting the API (see [Configuration](#configuration)).
+
+**Terminal 2 — serve the frontend:**
+
+Activate the virtual environment in this second terminal too (`source .venv/bin/activate` on macOS/Linux, or `.venv\Scripts\Activate.ps1` in PowerShell), then run:
+
+```bash
+python -m http.server 5500 --bind 127.0.0.1 --directory frontend
+```
+
+Open **[http://127.0.0.1:5500/#/](http://127.0.0.1:5500/#/)**. To view it inside VS Code, open the Command Palette, choose **Simple Browser: Show**, and enter that URL. With a fresh starter-data copy, you should see the lime homepage, food photos and **104 restaurants to explore**. Counts can differ if you preserve a catalog with custom restaurants or menus. Imported menus display a **Demo menu** notice; customers can register, add items, check out and view their saved orders.
+
+Stop the frontend and API with `Ctrl+C` in their respective terminals. On later runs, set `DATA_DIR` to the existing demo directory before starting the API; running the API without it uses the four-restaurant starter catalog.
+
+### Run with the starter catalog
+
+The same lime frontend also works with the four committed restaurants, without Kaggle or Pandas:
+
+1. Start the backend using [Run the Application](#run-the-application), on port `8000`.
+2. Activate the virtual environment in a **second terminal**, then serve the frontend from the same repository root:
 
    ```bash
-   python -m http.server 5500 --directory frontend
+   python -m http.server 5500 --bind 127.0.0.1 --directory frontend
    ```
 
-3. Open **http://127.0.0.1:5500** in a browser.
+3. Open **[http://127.0.0.1:5500/#/](http://127.0.0.1:5500/#/)** in a browser.
 
 The page must be served on port `5500`, either from `localhost` or `127.0.0.1`. The backend only accepts cross-origin requests from those two origins (`CORSMiddleware` in `app/main.py`). Opening `index.html` directly from the file system, or serving it on another port, fails with "Could not load restaurants". VS Code's Live Server extension also uses port 5500 by default. If the API runs somewhere else, change the **API address** field at the bottom of the page.
+
+### If the website still looks outdated
+
+- Check the branch/tag and project folder in VS Code. Use current `main` or a branch containing it, and run both servers from that same checkout.
+- Stop an older frontend process already using port `5500`, then start the command above. An older clone can otherwise keep serving its own files.
+- Open the HTTP URL above and hard-refresh the page (`Cmd+Shift+R` on macOS or `Ctrl+Shift+R` on Windows/Linux).
+- If the lime UI shows only four restaurants, point the API's `DATA_DIR` at the expanded catalog and restart the API. Restaurant count depends on the selected data directory.
 
 ### Customer workflow in the browser
 
@@ -109,18 +173,9 @@ After creating a restaurant, stop the backend (`Ctrl+C`) and start it again with
 
 The optional importer loads `doordash.csv` from [polartech's DoorDash Restaurant Data](https://www.kaggle.com/datasets/polartech/doordash-restaurant-data), using the [KaggleHub Pandas adapter](https://github.com/Kaggle/kagglehub#kaggledatasetadapterpandas). It selects the first **100 valid, unique restaurants** by default. Downloads happen only when you run the command; browsing the app does not require Kaggle, Pandas or network access.
 
-Stop the backend before importing. From the project root with the virtual environment activated:
+Use the [updated website launch sequence](#launch-the-updated-website-in-vs-code) above to prepare/import the catalog and start both servers. Stop the backend before importing.
 
-```bash
-python -m pip install -r requirements-import.txt
-catalog_dir=$(mktemp -d)
-cp data/*.json "$catalog_dir/"
-python -m app.import_restaurants --data-dir "$catalog_dir" --demo-menus --dry-run
-python -m app.import_restaurants --data-dir "$catalog_dir" --demo-menus
-DATA_DIR="$catalog_dir" python -m uvicorn app.main:app --reload
-```
-
-Keep this data directory to retain the imported catalog across restarts. The existing frontend now lists up to **104 restaurants**, including the four original examples. To enrich your existing working data instead, supply its directory with `--data-dir`. A downloaded file also works offline: `python -m app.import_restaurants --csv /path/to/doordash.csv --data-dir "$catalog_dir" --demo-menus`. Increase `--limit` to expand the selection. Repeating the same import selects the same source identities instead of adding the next batch; existing restaurant IDs and details are retained. Invalid rows and duplicates are counted in the summary. Customers, carts and orders are untouched.
+Keep this data directory to retain the imported catalog across restarts. Starting from the committed data produces **104 restaurants and 305 menu items**, including the four original restaurants and five original menu items. To enrich your existing working data instead, supply its directory with `--data-dir`. A downloaded file also works offline: `python -m app.import_restaurants --csv /path/to/doordash.csv --data-dir ../food-delivery-demo-data --demo-menus`. Increase `--limit` to expand the selection. Repeating the same import selects the same source identities instead of adding the next batch; existing restaurant IDs and details are retained. Invalid rows and duplicates are counted in the summary. Customers, carts and orders are untouched.
 
 `--demo-menus` makes imported restaurants orderable with **three fictional, cuisine-based sample dishes and positive dollar prices per restaurant**. These dishes and prices are authored project demo content, not the restaurants' actual menus or offers and not supplied by Kaggle or DoorDash. Names start with **Demo** and descriptions with **Demo menu:** so the distinction stays visible in the app. The importer opens a newly seeded restaurant only after all three menu items are saved, using the normal menu and restaurant services.
 
