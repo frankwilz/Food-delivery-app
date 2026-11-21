@@ -139,6 +139,13 @@ _Members: add any other tutorials, Stack Overflow answers, course materials or c
 | Olutayo Akere | Claude Code (Anthropic) | Suggested design improvements; implemented the per-file locks in PR #95 and their tests; wrote the 5.6–5.8 tests and frontend fixes on the branches listed under "Olutayo Akere: Milestone 2" | Ran the full test suite locally; disabled the locks to confirm the concurrency and regression tests fail without them; checked the frontend changes in a browser on a copy of the data. These are contributor-reported checks; teammate feedback/revision links remain PENDING. |
 | Frank Williams | OpenAI Codex | Adapted preserved integration work with source credit; implemented account/session and ordering UI/tests; restored missing milestone documentation and audited issue/PR evidence | Historical integration checks: 477 Python tests. Current main a840197: 538 Python / 27 Node tests and fresh browser workflow verified with unchanged committed data. The remaining documentation review/merge, three missing member feedback links and final release references remain required. |
 
+### Milestone 2 AI use examples
+
+| Student | Artifact and label | AI tool | Purpose and influence | Validation | PR or commit |
+| --- | --- | --- | --- | --- | --- |
+| Frank Williams | `frontend/api.mjs` — **AI-GENERATED** | OpenAI Codex | Generated the shared HTTP/session client for consistent authenticated requests; the output was adapted into the account and ordering workflow. | Team members tested and reviewed the changes before committing. | [#90](https://github.com/frankwilz/Food-delivery-app/pull/90) |
+| AbdulHaady Oludare | `tests/test_checkout.py` — **AI-ASSISTED** | Claude Code (Anthropic) | Suggested cases for validating current menu prices at checkout; Abdul wrote the final test code. | Team members tested and reviewed the changes before committing. | [`a81e51c`](https://github.com/frankwilz/Food-delivery-app/commit/a81e51c5f0e087382502577bc19d260325d4cf41) |
+
 ## Verification and release evidence
 
 - Current main [`a840197`](https://github.com/frankwilz/Food-delivery-app/commit/a840197ae8a736a36883d7b56c0903a19637ca3f): **538 Python / 27 Node tests passed**, including both real-server restart checks; all five committed JSON data files stayed unchanged. This includes merged #101/#103/#104/#105/#106/#107. It is the current code snapshot, not the final post-documentation release tag.
