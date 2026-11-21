@@ -13,19 +13,33 @@
 <body>
   <header class="top">
     <div class="top-inner">
-      <a class="brand" href="#/">Food Delivery</a>
-      <div class="search" id="searchWrap">
-        <input id="search" type="search" placeholder="Search restaurants, cuisines or addresses" aria-label="Search restaurants">
-      </div>
+      <a class="brand" href="#/" aria-label="Food Delivery home"><span class="brand-mark" aria-hidden="true">fd</span><span>food<span class="brand-light">delivery</span><span class="brand-dot">.</span></span></a>
       <button class="btn" id="openCreate" type="button" hidden>Add restaurant</button>
       <nav class="session-nav" aria-label="Account" id="sessionNav"></nav>
     </div>
   </header>
 
+  <section class="home-hero" id="homeHero" aria-labelledby="homeTitle" hidden>
+    <div class="hero-copy">
+      <p class="eyebrow">A little inspiration for your appetite</p>
+      <h1 id="homeTitle">Your next favorite<br>starts here.</h1>
+      <p class="hero-description">Discover restaurants. Find your flavor.</p>
+      <form class="hero-search" id="searchWrap" role="search">
+        <label class="sr-only" for="search">Search restaurants, cuisines or addresses</label>
+        <span class="search-icon" aria-hidden="true"></span>
+        <input id="search" type="search" placeholder="Pizza, tacos, or a restaurant…" autocomplete="off">
+        <button class="search-submit" type="submit" aria-label="Search restaurants">→</button>
+      </form>
+      <button class="browse-link" id="browseRestaurants" type="button">Explore the restaurants <span aria-hidden="true">↓</span></button>
+    </div>
+  </section>
+
   <div class="session-status" id="sessionStatus" role="status" aria-live="polite"></div>
   <main id="app" aria-live="polite"></main>
 
   <footer>
+    <a class="footer-brand" href="#/">fooddelivery.</a>
+    <span class="photo-disclaimer">Food photography is illustrative.</span>
     <label class="inline">API address <input id="apiBase" value="http://127.0.0.1:8000"></label>
     <span id="apiMsg" class="form-msg" role="status" aria-live="polite"></span>
   </footer>
