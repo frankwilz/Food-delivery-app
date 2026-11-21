@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 
 import pytest
+from data_consistency import load_and_check
 from fastapi.testclient import TestClient
 
 from app.core import config
@@ -298,4 +299,9 @@ def test_customer_cart_and_order_persist_after_server_restarts(tmp_path):
 
     saved_carts = json.loads((data_dir / "carts.json").read_text(encoding="utf-8"))
     assert next(row for row in saved_carts if row["id"] == cart["id"])["status"] == "checked_out"
+
+    saved = load_and_check(data_dir)
+    assert saved["orders"][order["id"]]["cart_id"] == cart["id"]
+    assert saved["carts"][cart["id"]]["customer_id"] == customer["id"]
+    assert saved["customers"][customer["id"]]["email"] == account["email"]
     assert {name: (BASE_DIR / "data" / name).read_bytes() for name in DATA_FILE_NAMES} == committed
