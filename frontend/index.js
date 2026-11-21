@@ -1,5 +1,6 @@
 import { createApiClient } from "./api.mjs";
 import { createAccountViews } from "./account.mjs";
+import { createShopping } from "./shopping.mjs";
 
 const $ = (id) => document.getElementById(id);
 const app = $("app");
@@ -9,6 +10,7 @@ try { sessionStorageForAPI = window.sessionStorage; } catch (_) { /* Session wor
 const client = createApiClient({ baseURL: $("apiBase").value, storage: sessionStorageForAPI });
 const request = (path, options) => client.request(path, options);
 let routeVersion = 0;
+let started = false;
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -170,7 +172,7 @@ async function showDetail(id, viewVersion) {
           el("div", {},
             el("p", { class: "mname" }, m.name, m.is_available ? "" : el("span", { class: "tag" }, "Unavailable")),
             m.description ? el("p", { class: "mdesc" }, m.description) : ""),
-          el("div", { class: "mprice" }, money(m.price))))));
+          el("div", { class: "mprice" }, money(m.price)), shopping.menuActions(m, r.is_open)))));
     });
   } catch (err) {
     if (viewVersion !== routeVersion || err.code === "SESSION_CHANGED") return;
@@ -181,9 +183,12 @@ async function showDetail(id, viewVersion) {
 
 // ---------- Routing ----------
 const accountViews = createAccountViews({ app, el, client, onSignedIn: () => { location.hash = "#/"; } });
+const shopping = createShopping({ app, el, request, money, getUser: () => client.snapshot().user,
+  navigate: hash => { location.hash = hash; }, toast });
 function route() {
   const viewVersion = ++routeVersion;
   const m = location.hash.match(/^#\/restaurant\/(\d+)/);
+  const order = location.hash.match(/^#\/orders\/(\d+)$/);
   $("searchWrap").hidden = !onHome();
   updateCreateButton();
   if ((location.hash === "#/signin" || location.hash === "#/register") && client.snapshot().user) {
@@ -193,6 +198,9 @@ function route() {
   if (location.hash === "#/signin") accountViews.showAuth("signin");
   else if (location.hash === "#/register") accountViews.showAuth("register");
   else if (location.hash === "#/account") accountViews.showAccount();
+  else if (location.hash === "#/cart") shopping.showCart();
+  else if (location.hash === "#/orders") shopping.showOrders();
+  else if (order) shopping.showOrder(order[1]);
   else if (m) showDetail(m[1], viewVersion);
   else showHome(viewVersion);
   window.scrollTo(0, 0);
@@ -319,7 +327,9 @@ client.subscribe(({ user, loading, error }) => {
       if (location.hash === "#/") route(); else location.hash = "#/";
       toast("Signed out");
     });
-    nav.append(el("a", { class: "account-link", href: "#/account" }, user.name), signout);
+    nav.append(el("a", { class: "account-link", href: "#/cart" }, "Cart"),
+      el("a", { class: "account-link", href: "#/orders" }, "My orders"),
+      el("a", { class: "account-link", href: "#/account" }, user.name), signout);
   } else if (!loading) {
     nav.append(el("a", { class: "btn ghost", href: "#/signin" }, "Sign in"),
       el("a", { class: "btn", href: "#/register" }, "Register"));
@@ -329,8 +339,12 @@ client.subscribe(({ user, loading, error }) => {
   const restored = previousLoading && !loading;
   previousUserId = user?.id ?? null;
   previousLoading = loading;
-  if (location.hash === "#/account" && (identityChanged || restored)) route();
+  const sessionView = /^(#\/(account|cart|orders)(\/|$)|#\/restaurant\/)/.test(location.hash);
+  if (started && sessionView && (identityChanged || restored)) route();
 });
 
 app.append(el("div", { class: "state", role: "status" }, "Loading Food Delivery…"));
-client.restore().catch(() => { /* The session status contains the API error. */ }).finally(route);
+client.restore().catch(() => { /* The session status contains the API error. */ }).finally(() => {
+  started = true;
+  route();
+});
