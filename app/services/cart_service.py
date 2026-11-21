@@ -65,6 +65,18 @@ class CartService:
     def get_cart(self, customer_id: int) -> dict:
         return self.priced(self.get_or_create_active_cart(customer_id))
 
+    def _cart_holding(self, customer_id: int, menu_item_id: int) -> dict:
+        """Return the customer's active cart if it holds the item, otherwise raise `ItemNotInCartError` (404).
+
+        Used by changes to an item already in the cart. Unlike `get_or_create_active_cart`, it never
+        creates a cart, so a refused request (404) writes nothing (review of PR #74).
+        """
+        self.customer_service.get_active_customer(customer_id)
+        cart = self.cart_repository.get_active_for_customer(customer_id)
+        if cart is None or not any(line["menu_item_id"] == menu_item_id for line in cart["items"]):
+            raise ItemNotInCartError(menu_item_id)
+        return cart
+
     # --- 3.3 Add items ---
 
     def add_item(self, customer_id: int, data: CartItemAdd) -> dict:
@@ -93,12 +105,9 @@ class CartService:
 
     def update_quantity(self, customer_id: int, menu_item_id: int, quantity: int) -> dict:
         with transaction(self.cart_repository):
-            cart = self.get_or_create_active_cart(customer_id)
+            cart = self._cart_holding(customer_id, menu_item_id)
             items = [dict(line) for line in cart["items"]]
-            line = next((line for line in items if line["menu_item_id"] == menu_item_id), None)
-            if line is None:
-                raise ItemNotInCartError(menu_item_id)
-            line["quantity"] = quantity
+            next(line for line in items if line["menu_item_id"] == menu_item_id)["quantity"] = quantity
             cart = self.cart_repository.update(cart["id"], {"items": items})
         return self.priced(cart)
 
@@ -106,10 +115,8 @@ class CartService:
 
     def remove_item(self, customer_id: int, menu_item_id: int) -> dict:
         with transaction(self.cart_repository):
-            cart = self.get_or_create_active_cart(customer_id)
+            cart = self._cart_holding(customer_id, menu_item_id)
             items = [line for line in cart["items"] if line["menu_item_id"] != menu_item_id]
-            if len(items) == len(cart["items"]):
-                raise ItemNotInCartError(menu_item_id)
             changes = {"items": items}
             if not items:
                 # An empty cart is no longer tied to a restaurant

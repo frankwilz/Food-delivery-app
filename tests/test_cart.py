@@ -481,3 +481,63 @@ def test_pricing_rounds_half_up_to_cents():
 
 def test_pricing_empty_cart():
     assert price_lines([]) == {"items": [], "subtotal": 0.0, "total": 0.0}
+
+
+# --- Regression: a refused PATCH or DELETE of a cart item writes nothing ---
+
+
+def ana_carts(tmp_path) -> list[dict]:
+    return [cart for cart in stored_carts(tmp_path) if cart["customer_id"] == ANA_ID]
+
+
+@pytest.mark.parametrize(
+    "method, body",
+    [("patch", {"quantity": 2}), ("delete", None)],
+    ids=["PATCH", "DELETE"],
+)
+def test_refused_item_change_without_a_cart_creates_no_cart(client, tmp_path, method, body):
+    """Regression for Abdul138's review of PR #74.
+
+    A customer with no cart sent `PATCH /cart/items/1` (and, from #75, `DELETE /cart/items/1`). The
+    service created an empty cart on disk and only then returned 404, so a refused request still wrote
+    to carts.json. Now the item lookup never creates a cart.
+    """
+    assert ana_carts(tmp_path) == []
+    before = (tmp_path / "carts.json").read_text(encoding="utf-8")
+
+    response = client.request(method, f"/cart/items/{PIZZA}", json=body, headers=ANA)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"Menu item {PIZZA} is not in the cart"
+    assert (tmp_path / "carts.json").read_text(encoding="utf-8") == before
+
+
+@pytest.mark.parametrize("method, body", [("patch", {"quantity": 2}), ("delete", None)], ids=["PATCH", "DELETE"])
+def test_refused_item_change_on_an_existing_cart_changes_nothing(client, tmp_path, method, body):
+    """Regression for PR #74: an item that is not in the cart is refused without touching the cart."""
+    add(client, PIZZA, 3)
+    before = (tmp_path / "carts.json").read_text(encoding="utf-8")
+
+    response = client.request(method, f"/cart/items/{SALAD}", json=body, headers=ANA)
+
+    assert response.status_code == 404
+    assert (tmp_path / "carts.json").read_text(encoding="utf-8") == before
+
+
+@pytest.mark.parametrize("method, body", [("patch", {"quantity": 2}), ("delete", None)], ids=["PATCH", "DELETE"])
+def test_deactivated_customer_still_gets_403_before_the_cart_lookup(client, tmp_path, method, body):
+    before = (tmp_path / "carts.json").read_text(encoding="utf-8")
+
+    response = client.request(method, f"/cart/items/{PIZZA}", json=body, headers=CHLOE)
+
+    assert response.status_code == 403
+    assert (tmp_path / "carts.json").read_text(encoding="utf-8") == before
+
+
+def test_service_item_changes_never_create_a_cart(service):
+    with pytest.raises(ItemNotInCartError):
+        service.update_quantity(ANA_ID, PIZZA, 2)
+    with pytest.raises(ItemNotInCartError):
+        service.remove_item(ANA_ID, PIZZA)
+
+    assert service.cart_repository.get_active_for_customer(ANA_ID) is None
