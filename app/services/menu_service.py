@@ -4,6 +4,7 @@ from app.core.errors import (
     NotFoundError,
     RestaurantNotFoundError,
 )
+from app.repositories.json_repository import transaction
 from app.repositories.menu_item_repository import MenuItemRepository
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.menu_item import MenuItemCreate, MenuItemUpdate
@@ -71,22 +72,26 @@ class MenuService:
 
     def create_menu_item(self, restaurant_id: int, item: MenuItemCreate) -> dict:
         self._ensure_restaurant_exists(restaurant_id)
-        self._ensure_name_unique(restaurant_id, item.name)
-        return self.menu_repository.create({"restaurant_id": restaurant_id, **item.model_dump(), "is_active": True})
+        # The name check and the save are one step, so two identical requests cannot both create
+        with transaction(self.menu_repository):
+            self._ensure_name_unique(restaurant_id, item.name)
+            return self.menu_repository.create({"restaurant_id": restaurant_id, **item.model_dump(), "is_active": True})
 
     def update_menu_item(self, restaurant_id: int, item_id: int, changes: MenuItemUpdate) -> dict:
         fields = changes.model_dump(exclude_unset=True)
         if not fields:
             raise EmptyUpdateError()
-        self.get_menu_item(restaurant_id, item_id)
-        if "name" in fields:
-            self._ensure_name_unique(restaurant_id, fields["name"], ignore_item_id=item_id)
-        return self.menu_repository.update(item_id, fields)
+        with transaction(self.menu_repository):
+            self.get_menu_item(restaurant_id, item_id)
+            if "name" in fields:
+                self._ensure_name_unique(restaurant_id, fields["name"], ignore_item_id=item_id)
+            return self.menu_repository.update(item_id, fields)
 
     def deactivate_menu_item(self, restaurant_id: int, item_id: int) -> dict:
         # A soft delete: the record stays in the file so existing carts and orders can still refer to it
-        self.get_menu_item(restaurant_id, item_id)
-        return self.menu_repository.update(item_id, {"is_active": False})
+        with transaction(self.menu_repository):
+            self.get_menu_item(restaurant_id, item_id)
+            return self.menu_repository.update(item_id, {"is_active": False})
 
     def get_item_by_id(self, item_id: int) -> dict | None:
         """Return any menu item by id, whatever its restaurant or status, or None. Used to price carts."""

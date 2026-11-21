@@ -1,6 +1,6 @@
 # Decision Receipt M2.3: Shared dependency construction
 
-**Prepared:** November 18, 2026. **Status:** implemented in merged PRs [#88](https://github.com/frankwilz/Food-delivery-app/pull/88) and [#89](https://github.com/frankwilz/Food-delivery-app/pull/89); individual team evidence and review-driven improvement records are still being completed.
+**Updated:** November 20, 2026. **Status:** shared dependency construction is implemented in merged PRs [#88](https://github.com/frankwilz/Food-delivery-app/pull/88) and [#89](https://github.com/frankwilz/Food-delivery-app/pull/89); per-member improvement evidence is recorded below; every missing peer-feedback/revision link remains **PENDING**. Current main snapshot: `a840197` (code, tests and API/reference changes through #107/#101/#103 are merged).
 
 ## Problem
 
@@ -42,30 +42,45 @@ Frank Williams adapted the preserved implementation by Zay Lin Myat in commit [`
 | [Abdul138's #88 review](https://github.com/frankwilz/Food-delivery-app/pull/88#pullrequestreview-5962148609) | Approval after testing the combined work against then-current main: 477 tests passed, both restart checks included, committed data unchanged. |
 | [Abdul138's #89 review](https://github.com/frankwilz/Food-delivery-app/pull/89#pullrequestreview-5962151427) | Approval after testing it on top of #88 and main. |
 
-Both PRs were merged by Abdul138. Each has one recorded approval from Abdul138 in the evidence above; this document does not claim a second approval or a feedback-driven revision. The current round requests reviews from **Abdul138, EuReKaA99 and tayo-ak** and requires **at least two teammate approvals** before a PR is merged.
+Both PRs were merged by Abdul138. Each has one recorded approval from Abdul138 in the evidence above; this document does not claim a second approval or a feedback-driven revision. The current round requests reviews from other teammates among **Abdul138, EuReKaA99 and tayo-ak**, excluding the PR author, and requires **at least two teammate approvals** before a PR is merged.
 
 ## Each member's architectural improvement
 
-### Frontend session boundary in PR #90
+The entries below identify implementation and test evidence. Each member must confirm the explanation of their own work. A merge or approval alone does not prove that their substantive PR improved because of peer feedback.
 
-Frank's new frontend architecture separates HTTP/session behavior (`frontend/api.mjs`) from account rendering and restaurant/order views. One client attaches the current bearer token, formats API errors and owns API-scoped token storage. It obtains profiles from the server and uses a session revision to reject late responses after logout, a new login or an API-address change. The ordering module reuses this client and replaces protected views when the session changes.
-
-This avoids separate token/header logic in each screen. The trade-off is that views must subscribe to session changes and handle a request superseded by another session. Alternatives were retaining the manual manager-token field or giving each view its own fetch/storage code. Neither would provide one consistent account boundary. Evidence: [PR #90](https://github.com/frankwilz/Food-delivery-app/pull/90), [PR #91](https://github.com/frankwilz/Food-delivery-app/pull/91), 19 HTTP/session tests and 8 ordering behavior tests. These are new implementations with Codex assistance; no teammate feedback-driven revision is claimed before actual review.
-
-This table is an evidence register, not an attribution based on planned ownership. Each member must confirm their own contribution and the associated PR/tests/review feedback.
-
-| Member | Improvement and available evidence | Remaining confirmation |
+| Member | Improvement, reason and trade-off | Implementation / test evidence |
 | --- | --- | --- |
-| Frank Williams | New shared frontend HTTP/session boundary in #90, reused by ordering in #91 and covered by 27 frontend tests; adapted shared backend composition in #88 and integration tests in #89 retain Zay's source credit. | Obtain teammate reviews, address substantive feedback and link the resulting revision; confirm the individual requirement with the team. |
-| Zay Lin Myat | Original author of the preserved integration/order-reading work credited above. | Select and explain his own qualifying M2 improvement; link his PR, tests and actual review discussion. |
-| AbdulHaady Oludare | Authored frontend file separation in [#27](https://github.com/frankwilz/Food-delivery-app/pull/27); review/merge evidence for #88/#89 is recorded above. | Confirm the qualifying M2 improvement and link its tests/review discussion; review of someone else's PR does not substitute for his own implementation. |
-| Olutayo Akere | Testing ownership is recorded in #55/#56. An assignment is not evidence of a completed architectural change. | Provide his qualifying improvement, PR, tests and review discussion. |
+| Frank Williams | Shared frontend HTTP/session client separates token storage/headers from views. It validates the server's profile and rejects late responses after logout or server/account changes. Views must handle superseded requests and subscribe to session changes. | Merged [#90](https://github.com/frankwilz/Food-delivery-app/pull/90), `df1fd7e`, `frontend/api.mjs`, 19 Node HTTP/session tests. Merged #107 reuses this boundary and adds 8 behavior tests. |
+| Zay Lin Myat | Central service/repository construction removes duplicate router builders and gives tests one storage configuration boundary. The central composition module imports all subsystems and needs maintenance as they grow. Zay authored preserved source `96d7b74`; Frank adapted it with attribution. Zay also authored the preserved #51 rule-audit source `1b2d1ea`, restored/adapted by Frank with authorship retained as `cf85894` in merged #104. | Merged [#88](https://github.com/frankwilz/Food-delivery-app/pull/88), [original source](https://github.com/frankwilz/Food-delivery-app/commit/96d7b74ba17873ca61f63c5d84bcf799989fe114); workflow/restart and dependency-wiring tests through #88/#89. Abdul's linked reviews validate those PRs; no feedback-driven revision is inferred. |
+| AbdulHaady Oludare | Shared `require_role`/`require_manager` dependencies build role checks on the authenticated-customer boundary. Restaurant/menu mutations consistently enforce 401/403 before reaching services. Route declarations must still apply the correct dependency. | Merged [#80](https://github.com/frankwilz/Food-delivery-app/pull/80), `ff8598a`, `app/api/dependencies.py`, `tests/test_authorization.py`. His merged [#94](https://github.com/frankwilz/Food-delivery-app/pull/94) manager UI retains backend enforcement. |
+| Olutayo Akere | Per-file shared re-entrant locks and sorted multi-file `transaction(...)` calls serialize read/check/write operations. Same-file writers wait; protection covers one server process and does not make two separate file replacements crash-atomic. | Merged [#95](https://github.com/frankwilz/Food-delivery-app/pull/95), `d52fda6`, `tests/test_concurrency.py` (12 tests). The bug-linked regression additions are merged in replacement [#105](https://github.com/frankwilz/Food-delivery-app/pull/105). Full decision/alternative and contributor-reported lock-disable experiment are retained in [PROVENANCE](PROVENANCE.md). |
+
+### Frank's frontend session boundary
+
+The client in `frontend/api.mjs` owns API-scoped token storage and error handling. It obtains the customer from `/customers/me`, attaches the current bearer token to protected requests and uses a session revision to reject responses from a superseded login, logout or API address. The account module renders forms independently. The merged ordering module reuses that same client and clears protected views when identity changes.
+
+The alternatives were retaining a pasted manager token or duplicating fetch/storage logic in every view. One client avoids drift in authentication behavior; the cost is an explicit lifecycle contract for every protected view. The 19 tests on main exercise headers, error messages, storage isolation, refresh, logout and out-of-order responses. Main now has 27 combined Node tests: the 19 client tests plus 8 ordering behavior tests merged through #107. This is Codex-assisted implementation, not a claim of teammate review before actual evidence exists.
+
+## Per-member peer-review-driven revision register
+
+**Missing member review links remain PENDING.** Populate these fields only with actual reviewer feedback and the substantive revision it caused. The audit found no recorded reviews on #95–#100; merged status alone supplies neither field.
+
+| Member | Substantive PR / feedback link | Resulting revision and explanation | Status |
+| --- | --- | --- | --- |
+| Frank Williams | **PENDING** | **PENDING** | Missing peer-feedback/revision evidence. |
+| Zay Lin Myat | [Abdul138 feedback on #74](https://github.com/frankwilz/Food-delivery-app/pull/74#pullrequestreview-5939365558): refused cart PATCH/DELETE requests must not write data. | [Follow-up #101](https://github.com/frankwilz/Food-delivery-app/pull/101), [`dd09814`](https://github.com/frankwilz/Food-delivery-app/commit/dd09814f4fa3a22ec6c9c360dcf0730cf585934a): implement and test no-write behavior for refused cart operations. | **VERIFIED FEEDBACK → IMPLEMENTED REVISION; #101 MERGED.** |
+| AbdulHaady Oludare | **PENDING** | **PENDING** | Missing peer-feedback/revision evidence. |
+| Olutayo Akere | **PENDING** | **PENDING** | Missing peer-feedback/revision evidence. |
+
+The [M2 summary](milestones/M2.md) and [PROVENANCE](PROVENANCE.md) record each member's already-authored cross-subsystem test with source attribution. That evidence and the improvement implementations above do not substitute for these missing review-driven revision links.
 
 ## Completion conditions
 
-- [ ] Every member has confirmed their improvement and its PR/test evidence.
-- [ ] Each member's substantive PR improved through peer-review feedback is linked, with the feedback and resulting change identified.
-- [ ] The current frontend/documentation PRs have at least two teammate approvals and green checks before merging.
-- [ ] The receipt and [M2 summary](milestones/M2.md) match the final merged system before tagging/submission.
+- [ ] Each member confirms their own architectural explanation and implementation/test evidence.
+- [ ] Every **PENDING** member review entry has a real feedback link and resulting substantive revision.
+- [ ] Completion-round PRs request other teammates from **Abdul138, EuReKaA99 and tayo-ak**, excluding the PR author, obtain **at least two teammate approvals**, address feedback and pass checks before merging. The remaining Frank-authored documentation PR requests all three eligible teammates.
+- [x] Code, rule audit/fixes, integration/regression tests and API/reference docs are merged through #101/#103/#104/#105/#106/#107; current main passes 538 Python / 27 Node tests and all three CI checks.
+- [ ] This restored milestone receipt/provenance/summary/sprint documentation is reviewed and merged.
+- [ ] Final combined verification, `m2-integrated-system` tag/full SHA and final-version submission references are recorded after the last approved merge.
 
-The course handout is not included in this repository. This receipt follows issue #57 and the per-person requirements recorded in the parent issues; the team should verify the final submission against the official handout.
+Issue #57 marks demo practice and Canvas submission complete. That checklist state does not establish a currently absent tag or replace the remaining final-version release checks. The course handout is not included in this repository; compare this evidence with the official handout before final acceptance.

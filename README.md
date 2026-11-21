@@ -201,6 +201,18 @@ Each layer has one responsibility:
 
 The route does not read the JSON file directly.
 
+### Concurrent requests
+
+FastAPI runs the routes in a thread pool, so two requests can change the same data file at once. Every change is a read → modify → write of the whole file, so without protection the second save would silently overwrite the first. That could lose a cart quantity, give two records the same id, create two accounts with one email, or turn a double-clicked **Place order** into two orders.
+
+`app/repositories/json_repository.py` prevents this with one re-entrant lock per data file:
+
+- **Repositories** hold their file's lock for the whole of each `create` and `update`.
+- **Services** wrap each check followed by a write in `transaction(...)`, so the check is still true when the write happens. Examples are duplicate email/name checks, cart changes, and checkout. Checkout locks the carts and orders files together, so a cart becomes exactly one order.
+- `transaction` takes its locks in a fixed order (sorted by file path), so two transactions over the same files cannot deadlock.
+
+`tests/test_concurrency.py` starts several threads at the same moment and checks that nothing is lost or duplicated. These locks cover one server process, which is how the app runs. Several worker processes (`uvicorn --workers N`) would need file-system locks or a database.
+
 ### Customer-to-order integration (5.2)
 
 `app/api/dependencies.py` builds every repository and service through FastAPI's `Depends` functions. Routes request services from that module. Checkout receives the customer and menu services, cart service/repository, restaurant repository and order repository; it never opens another subsystem's JSON file. Shared dependencies are reused within a request, and file paths come from `app.core.config` when repositories are built.
@@ -226,24 +238,6 @@ Use a fresh temporary directory for each demo. The key above is only for the loc
 | Restart again | Restart with the same command, then repeat the order requests and `GET /cart` | The order survives; the active cart is new and empty. |
 
 The full API demo uses the order-retrieval implementation from 4.6 (#48). The web frontend workflow is covered separately by 5.4 and 5.5.
-
-### Business-rule evidence
-
-These are the current implementation points and tests. The final 5.3 audit (#51) remains separate: API additions reject mixed restaurants, while checkout of a hand-edited cart with inconsistent restaurant links still needs that audit/fix.
-
-| Rule | Backend enforcement | Evidence |
-| --- | --- | --- |
-| Active customer required for cart/checkout | `CustomerService.get_active_customer`, called by `CartService.get_or_create_active_cart` and `CheckoutService.prepare` | `test_service_get_cart_rejects_deactivated_customer`, `test_service_validate_cart_errors` |
-| At most one active cart | `CartService.get_or_create_active_cart` | `test_repeated_get_cart_never_creates_a_second_active_cart` |
-| Cart additions use one restaurant | `CartService.add_item` | `test_item_from_a_different_restaurant_returns_409_and_changes_nothing` |
-| Item exists, is active and available | `MenuService.get_orderable_item`, reused by cart and checkout | `test_unavailable_item_returns_409`, `test_deactivated_item_returns_409`, `test_unknown_item_returns_404` |
-| Whole-number quantity 1–99; combined add limit | `CartItemAdd`/`CartItemUpdate` validation, `CartService.add_item`, stored-cart validation in `CheckoutService.prepare` | `test_add_invalid_quantity_returns_422`, `test_invalid_stored_quantity_returns_400` |
-| Backend prices/totals, recalculated at checkout | `pricing.price_lines`, `CheckoutService.revalidate_items` and `calculate_totals` | `test_pricing_avoids_float_errors`, `test_price_changed_between_adding_and_checkout_uses_the_new_price` |
-| Order comes from a valid active cart | `CheckoutService.prepare` | `test_no_cart_returns_400_and_does_not_create_one`, `test_checked_out_cart_is_not_used` |
-| Save order before closing cart | `CheckoutService.checkout`, then `CartService.mark_checked_out` | `test_cart_is_closed_only_after_the_order_is_saved`, `test_order_save_failure_leaves_the_cart_unchanged` |
-| Historical names, prices and address stay fixed | `CheckoutService.build_order` stores snapshots | `test_order_snapshot_does_not_change_with_the_menu_or_profile` |
-| Customer sees only owned orders | `OrderService.list_for_customer` and `get_for_customer` | `test_list_orders_never_includes_another_customers_orders`, `test_get_another_customers_order_returns_the_same_404` |
-| Relationships survive restarts | JSON repositories and stable configured `DATA_DIR` | `test_customer_cart_and_order_persist_after_server_restarts`, `test_representative_data_has_valid_relationships_and_totals` |
 
 ## Menu Functionality
 
@@ -330,6 +324,26 @@ POST /auth/login
 - **Own data only:** customer endpoints never take a customer id from the client. The id always comes from the token (`customer["id"]`), and services look up only that customer's records, so there is no way to name another customer's cart or account.
 - **Demo:** log in as `dev.patel@example.com` (password in [Representative Data](#representative-data)) to get a manager token for the restaurant and menu forms in `/docs`.
 
+## Business Rules
+
+Cross-subsystem rules are enforced by backend services, request schemas and shared authentication dependencies, never only in the frontend. Each row names the code that enforces the rule and a test that proves it. `tests/test_business_rules.py` checks that every test named here exists.
+
+| Rule | Where it is enforced | Proved by |
+| --- | --- | --- |
+| A deactivated customer can't create or modify a cart | `get_current_customer` in `app/api/dependencies.py`, and `CartService.get_or_create_active_cart` through `CustomerService.get_active_customer` | `tests/test_cart.py::test_deactivated_customer_gets_403_and_no_cart`, `tests/test_cart.py::test_deactivated_customer_cannot_add_items`, `tests/test_cart.py::test_service_get_cart_rejects_deactivated_customer` |
+| At most one active cart per customer | `CartService.get_or_create_active_cart` checks and creates under the cart repository transaction lock, so concurrent first requests cannot create duplicate active carts | `tests/test_cart.py::test_repeated_get_cart_never_creates_a_second_active_cart`, `tests/test_concurrency.py::test_concurrent_first_cart_requests_create_one_active_cart` |
+| Cart items come from only one restaurant | `CartService.add_item` (`DifferentRestaurantError`), and again at checkout in `CheckoutService.prepare` | `tests/test_cart.py::test_item_from_a_different_restaurant_returns_409_and_changes_nothing`, `tests/test_checkout.py::test_cart_mixing_restaurants_cannot_be_checked_out` |
+| Unavailable, deactivated or nonexistent items can't be added | `CartService.add_item` through `MenuService.get_orderable_item` | `tests/test_cart.py::test_unavailable_item_returns_409`, `tests/test_cart.py::test_deactivated_item_returns_409`, `tests/test_cart.py::test_unknown_item_returns_404` |
+| Quantities are valid | `CartItemAdd` and `CartItemUpdate` in `app/schemas/cart.py` (whole number, 1 to 99), `CartService.add_item` (combined total), `CheckoutService.prepare` (stored quantities) | `tests/test_cart.py::test_add_invalid_quantity_returns_422`, `tests/test_cart.py::test_update_invalid_quantity_returns_422_and_changes_nothing`, `tests/test_cart.py::test_add_beyond_the_maximum_combined_quantity_returns_400`, `tests/test_checkout.py::test_invalid_stored_quantity_returns_400` |
+| The backend calculates totals | `price_lines` in `app/services/pricing.py`, used by `CartService.priced` and `CheckoutService.calculate_totals`; the cart stores only ids and quantities | `tests/test_cart.py::test_totals_for_several_items_and_quantities`, `tests/test_cart.py::test_prices_are_never_stored_in_the_cart`, `tests/test_checkout.py::test_any_price_or_total_sent_by_the_client_is_ignored`, `tests/test_checkout.py::test_checkout_uses_the_shared_pricing_function` |
+| Checkout revalidates menu availability and prices | `CheckoutService.revalidate_items` through `MenuService.get_orderable_item`, then `calculate_totals` with the current menu items | `tests/test_checkout.py::test_item_made_unavailable_after_adding_returns_409_naming_it`, `tests/test_checkout.py::test_item_deactivated_after_adding_returns_409_naming_it`, `tests/test_checkout.py::test_price_changed_between_adding_and_checkout_uses_the_new_price` |
+| Checkout requires a valid customer | `get_current_customer`, and `CheckoutService.prepare` through `CustomerService.get_active_customer` | `tests/test_checkout.py::test_checkout_requires_sign_in`, `tests/test_checkout.py::test_deactivated_customer_gets_403` |
+| Orders are only created from a valid cart | `CheckoutService.prepare`: the customer's own active, non-empty cart, an existing and open restaurant, valid quantities and orderable items; nothing is written if a check fails | `tests/test_checkout.py::test_empty_cart_returns_400`, `tests/test_checkout.py::test_missing_restaurant_returns_404`, `tests/test_checkout.py::test_closed_restaurant_returns_409`, `tests/test_checkout.py::test_another_customers_cart_is_not_used`, `tests/test_checkout.py::test_failed_checkout_does_not_create_an_order` |
+| The cart is not cleared until the order is saved | `CheckoutService.checkout` holds cart/order transaction locks and calls `OrderRepository.create` first and `CartService.mark_checked_out` after; each order records its `cart_id`, so a cart becomes at most one order | `tests/test_checkout.py::test_cart_is_closed_only_after_the_order_is_saved`, `tests/test_checkout.py::test_order_save_failure_leaves_the_cart_unchanged`, `tests/test_checkout.py::test_checking_out_twice_creates_only_one_order`, `tests/test_checkout.py::test_order_saved_but_cart_not_closed_is_not_ordered_twice` |
+| Relationships stay valid after restarts | Repositories assign stable ids (`max + 1`) and save atomically; API removals keep referenced records, and orders keep snapshots of names, prices and the address | `tests/test_integration.py::test_customer_cart_and_order_persist_after_server_restarts`, `tests/test_workflow.py::test_representative_data_has_valid_relationships_and_totals`, `tests/test_orders.py::test_menu_price_change_after_checkout_does_not_change_the_order` |
+
+**Gap found and fixed (5.3):** the one-restaurant rule was only checked when an item was added. If `carts.json` was changed outside the API, checkout would accept a cart that mixed restaurants and save an order with another restaurant's item. `CheckoutService.prepare` now rechecks every item's restaurant with the same `DifferentRestaurantError` and refuses with `409`.
+
 ## Error Handling
 
 Every error response is JSON with the shared `ErrorResponse` shape, `{"detail": "..."}`, and every error status is listed in `/docs`.
@@ -340,7 +354,7 @@ Every error response is JSON with the shared `ErrorResponse` shape, `{"detail": 
 | `401` | The login email or password is wrong, or a protected endpoint was called with a missing, invalid or expired token. The response includes a `WWW-Authenticate: Bearer` header. |
 | `403` | The account has been deactivated (at login with the correct password, and on every protected endpoint, including with a token issued before deactivation), or a customer called a manager-only endpoint. |
 | `404` | Missing restaurant/menu item, item not owned by the requested restaurant, item not in the cart, or missing/non-owned order. |
-| `409` | Duplicate restaurant/menu item/email; mixed-restaurant cart addition; unavailable/deactivated item; checkout with a closed restaurant, an unorderable item or a cart already saved as an order. |
+| `409` | Duplicate restaurant/menu item/email; mixed-restaurant cart addition or checkout; unavailable/deactivated item; checkout with a closed restaurant, an unorderable item or a cart already saved as an order. |
 | `422` | Invalid input: a wrong type, a value out of range, a missing required field, an unknown or server-assigned field (`id`, `restaurant_id`), `null` in a `PATCH`, or malformed JSON. For `422` responses, `detail` is FastAPI's list of validation errors. |
 | `500` | A data file is missing, unreadable or corrupt. The client receives `{"detail": "Data storage error"}`, and the full error is written to the server log. |
 
@@ -411,6 +425,9 @@ node --test tests/frontend/*.test.mjs
 | `tests/test_authorization.py` | Customer/manager permissions, 401/403 contracts, and ownership isolation. |
 | `tests/test_cart.py` | Active-cart lifecycle, one-restaurant and availability rules, quantities, pricing and persistence. |
 | `tests/test_checkout.py`, `tests/test_orders.py` | Checkout validation, current prices, save-before-close/recovery, immutable snapshots and private order reads. |
+| `tests/test_business_rules.py` | Business-rule documentation points to existing service methods and tests; the full rule table is supplied by the 5.3 fix. |
+| `tests/test_concurrency.py` | Concurrent JSON changes, unique IDs, active-cart creation and one order per cart within one server process. |
+| `tests/test_demo_scenarios.py`, `tests/test_regressions.py` | Full subsystem/demo scenarios and reproductions of the checkout/cart race fixed in PR #95; restored through the 5.8 PR. |
 | `tests/test_workflow.py` | Five-file data consistency, the seeded checkout demo, and a new customer's registration → login → browsing → cart → checkout → order retrieval. |
 | `tests/test_integration.py` | Restaurant/menu integration, error handling, API documentation, and real `uvicorn` restart tests, including a registered customer, filled cart and saved order across two restarts with the same `DATA_DIR`. |
 | `tests/frontend/api.test.mjs` | Registration/sign-in, bearer headers, API errors, session restore/isolation, stale responses and profile updates. |

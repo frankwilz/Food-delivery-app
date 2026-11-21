@@ -37,12 +37,30 @@
         <label>Name <input class="field" name="name" required></label>
         <label>Cuisine <input class="field" name="cuisine" required placeholder="e.g. Italian"></label>
         <label>Address <input class="field" name="address" required></label>
-        <label>Rating (0 to 5) <input class="field" name="rating" type="number" min="0" max="5" step="0.1" value="4.0" required></label>
         <label class="inline"><input name="is_open" type="checkbox" checked> Currently open</label>
         <div class="form-msg" id="formMsg" aria-live="polite"></div>
         <div class="row">
           <button class="btn ghost" type="button" id="cancelCreate">Cancel</button>
           <button class="btn" type="submit">Create restaurant</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="menuDialog" aria-labelledby="menuTitle">
+    <div class="dlg">
+      <h2 id="menuTitle">Add a menu item</h2>
+      <form id="menuForm">
+        <label>Name <input class="field" name="name" required maxlength="100"></label>
+        <label>Category <input class="field" name="category" required maxlength="50" list="menuCategories" placeholder="e.g. Pizza"></label>
+        <datalist id="menuCategories"></datalist>
+        <label>Price ($) <input class="field" name="price" type="number" min="0.01" step="0.01" required></label>
+        <label>Description <textarea class="field" name="description" rows="3" maxlength="500"></textarea></label>
+        <label class="inline"><input name="is_available" type="checkbox" checked> Available to order</label>
+        <div class="form-msg" id="menuMsg" aria-live="polite"></div>
+        <div class="row">
+          <button class="btn ghost" type="button" id="cancelMenu">Cancel</button>
+          <button class="btn" type="submit">Add item</button>
         </div>
       </form>
     </div>
