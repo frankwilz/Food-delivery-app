@@ -55,9 +55,14 @@ def test_price_changes_before_and_after_checkout(client):
     assert client.get("/cart", headers=customer).json()["items"] == []
 
     # Menu change after checkout: the saved order keeps its snapshot
-    client.patch(
+    changed = client.patch(
         f"/restaurants/{RESTAURANT_ID}/menu/{PIZZA}", json={"price": 25, "name": "Deluxe Pizza"}, headers=manager
     )
+    assert changed.status_code == 200
+    current_menu = client.get(f"/restaurants/{RESTAURANT_ID}/menu/{PIZZA}")
+    assert current_menu.status_code == 200
+    assert current_menu.json()["price"] == 25
+    assert current_menu.json()["name"] == "Deluxe Pizza"
     saved = client.get(f"/orders/{order['id']}", headers=customer).json()
     assert saved == order
     assert saved["items"][0]["name"] == "Pepperoni Pizza"
