@@ -15,7 +15,7 @@ from app.repositories.customer_repository import CustomerRepository
 from app.repositories.menu_item_repository import MenuItemRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.restaurant_repository import RestaurantRepository
-from app.services.cart_service import CartService
+from app.services.cart_service import CartService, DifferentRestaurantError
 from app.services.checkout_service import (
     CheckoutService,
     EmptyCartError,
@@ -678,3 +678,32 @@ def test_order_repository_get_by_cart_id(tmp_path):
 
     assert repository.get_by_cart_id(7) == order
     assert repository.get_by_cart_id(8) is None
+
+
+# --- 5.3: an order never mixes restaurants ---
+
+CRUNCHWRAP = 4  # restaurant 2
+
+
+def test_cart_mixing_restaurants_cannot_be_checked_out(client, tmp_path):
+    """Regression for #51: checkout only trusted the cart's one-restaurant rule, which is checked when an
+    item is added. A cart changed outside the API could mix restaurants and still become an order."""
+    mixed = [{"menu_item_id": PIZZA, "quantity": 1}, {"menu_item_id": CRUNCHWRAP, "quantity": 1}]
+    write_carts(tmp_path, [cart_record(id=99, items=mixed)])
+    before = data_files(tmp_path)
+
+    response = client.post("/checkout", headers=ANA)
+
+    assert response.status_code == 409
+    assert response.json()["detail"].startswith(
+        f"Menu item {CRUNCHWRAP} (Crunchwrap Supreme) is from restaurant 2, but the cart has items from restaurant 1"
+    )
+    assert data_files(tmp_path) == before
+
+
+def test_service_rejects_a_cart_mixing_restaurants(checkout_service, tmp_path):
+    mixed = [{"menu_item_id": CRUNCHWRAP, "quantity": 1}, {"menu_item_id": PIZZA, "quantity": 1}]
+    write_carts(tmp_path, [cart_record(id=99, restaurant_id=2, items=mixed)])
+
+    with pytest.raises(DifferentRestaurantError):
+        checkout_service.validate_cart(ANA_ID)
