@@ -25,7 +25,7 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
-// Visual helpers: no image field in the API, so each cuisine gets a color and emoji.
+// Local illustrative food photos; no restaurant or menu photo field is assumed.
 const EMOJI = [
   [/pizza|italian/i, "\u{1F355}"], [/burger|american|grill|bbq/i, "\u{1F354}"],
   [/sushi|japan|ramen/i, "\u{1F363}"], [/indian|curry/i, "\u{1F35B}"],
@@ -35,11 +35,36 @@ const EMOJI = [
   [/african|nigerian|jollof/i, "\u{1F372}"], [/breakfast|brunch/i, "\u{1F95E}"],
 ];
 const emojiFor = (cuisine) => (EMOJI.find(([re]) => re.test(cuisine || "")) || [null, "\u{1F37D}\uFE0F"])[1];
-const hueFor = (s) => [...String(s || "")].reduce((a, c) => a + c.charCodeAt(0), 0) * 37 % 360;
-const bannerStyle = (cuisine) => {
-  const h = hueFor(cuisine);
-  return `background: linear-gradient(135deg, hsl(${h} 75% 90%), hsl(${h} 65% 78%));`;
-};
+const FOOD = [
+  { pattern: /pizza|pizzeria|flatbread|margherita|pepperoni|calzone/i, cuisine: /italian/i, label: "pizza" },
+  { pattern: /burger|slider|cheesesteak|sandwich/i, cuisine: /american|barbecue|bbq|grill/i, label: "burger" },
+  { pattern: /taco|burrito|quesadilla|enchilada/i, cuisine: /mexic|tex.?mex/i, label: "tacos" },
+  { pattern: /sushi|sashimi|maki|nigiri|poke/i, cuisine: /japan|seafood|fish|salmon/i, label: "sushi" },
+  { pattern: /noodle|ramen|pho\b|udon|pasta|spaghetti|rice|bowl|curry/i, cuisine: /indian|thai|chinese|viet|korean|mediterranean|middle eastern|african|halal/i, label: "noodles and bowls" },
+  { pattern: /salad|greens|grain/i, cuisine: /vegan|vegetarian|healthy/i, label: "salad" },
+  { pattern: /chicken|wings|tender|fried|kfc|popeye/i, label: "fried chicken" },
+  { pattern: /dessert|cake|cookie|brownie|ice.?cream|sweet|bakery|donut|doughnut|pastry|pancake/i, cuisine: /coffee|café|cafe|breakfast|brunch/i, label: "dessert" },
+];
+function foodPhoto(...descriptions) {
+  const name = String(descriptions[0] || "");
+  const category = String(descriptions[1] || "");
+  const namedFood = /\b(cake|cookies?|brownie|pie|pastry|pudding|ice[ -]?cream|salad|burger|sandwich|chicken|steak|duck|pork|pizza|tacos?|noodles?|ramen|sauce)\b/i.test(name);
+  const drinkCategory = /^(drinks?|beverages?|coffee\s*(?:&|and)\s*tea)$/i.test(category.trim());
+  const drinkName = /\b(water|teas?|lemonade|limeade|lassi|coffee|espresso|latte|cappuccino|mocha|juice|soda|smoothie|milkshake|kombucha|chai|matcha|cocoa)\b/i.test(name);
+  if (!namedFood && (drinkCategory || drinkName)) {
+    return el("div", { class: "food-photo drink-photo", role: "img", "aria-label": "Illustrative citrus drink photograph" });
+  }
+  // Match the dish before its category/restaurant cuisine, so a salad at a pizzeria stays a salad.
+  let tile = -1;
+  for (const description of descriptions) {
+    tile = FOOD.findIndex(({ pattern }) => pattern.test(String(description || "")));
+    if (tile !== -1) break;
+  }
+  if (tile === -1) tile = FOOD.findIndex(({ cuisine }) => cuisine?.test(descriptions.join(" ")));
+  if (tile === -1) tile = [...descriptions.join(" ")].reduce((sum, char) => sum + char.charCodeAt(0), 0) % FOOD.length;
+  return el("div", { class: "food-photo", role: "img", "aria-label": `Illustrative ${FOOD[tile].label} photograph`,
+    style: `--food-x:${(tile % 4) * 100 / 3}%;--food-y:${Math.floor(tile / 4) * 100}%;` });
+}
 const isManager = () => client.snapshot().user?.role === "manager";
 const onHome = () => !location.hash || location.hash === "#/";
 // Adding a restaurant only makes sense from the restaurant list, not inside one restaurant
@@ -50,9 +75,17 @@ const ratingBadge = (r, suffix = "") => (r.rating
   : el("span", { class: "rating-new" }, "New"));
 
 function banner(r, extraClass = "") {
-  return el("div", { class: "banner " + extraClass, style: bannerStyle(r.cuisine) },
-    el("span", { "aria-hidden": "true" }, emojiFor(r.cuisine)),
+  return el("div", { class: "banner " + extraClass },
+    foodPhoto(r.name, r.cuisine),
     el("span", { class: "badge " + (r.is_open ? "open" : "closed") }, r.is_open ? "Open now" : "Closed"));
+}
+
+function menuDescription(item) {
+  const description = String(item.description || "").trim();
+  if (!/^Demo menu:/i.test(description)) return description;
+  const content = description.replace(/^Demo menu:\s*/i, "");
+  const disclaimer = "Fictional sample dish and price, not the restaurant's real menu.";
+  return (content.endsWith(disclaimer) ? content.slice(0, -disclaimer.length) : content).trim();
 }
 
 // ---------- Home ----------
@@ -62,7 +95,7 @@ async function loadRestaurants() {
 
 function filtered() {
   const q = state.query.toLowerCase();
-  return state.restaurants.filter((r) =>
+  return (state.restaurants || []).filter((r) =>
     (state.cuisine === "All" || r.cuisine === state.cuisine) &&
     (!q || [r.name, r.cuisine, r.address].some((v) => String(v).toLowerCase().includes(q))));
 }
@@ -72,7 +105,7 @@ function renderGrid() {
   if (!holder) return;
   holder.textContent = "";
   const list = filtered();
-  holder.append(el("p", { class: "count" }, list.length + (list.length === 1 ? " restaurant" : " restaurants")));
+  holder.append(el("p", { class: "count", role: "status" }, list.length + (list.length === 1 ? " restaurant to explore" : " restaurants to explore")));
   if (!list.length) {
     holder.append(el("div", { class: "state" }, "No restaurants match your search. Try a different word or clear the cuisine filter."));
     return;
@@ -81,7 +114,7 @@ function renderGrid() {
     el("a", { class: "rcard" + (r.is_open ? "" : " is-closed"), href: "#/restaurant/" + r.id },
       banner(r),
       el("div", { class: "rbody" },
-        el("p", { class: "rname" }, r.name),
+        el("div", { class: "card-heading" }, el("p", { class: "rname" }, r.name), el("span", { class: "card-arrow", "aria-hidden": "true" }, "↗")),
         el("div", { class: "rmeta" }, ratingBadge(r), el("span", {}, r.cuisine)),
         el("div", { class: "addr" }, r.address))))));
 }
@@ -89,21 +122,26 @@ function renderGrid() {
 function renderChips() {
   const holder = $("chips");
   if (!holder) return;
+  const scrollPosition = holder.scrollLeft;
   holder.textContent = "";
   const cuisines = ["All", ...new Set(state.restaurants.map((r) => r.cuisine).filter(Boolean))].sort((a, b) =>
     a === "All" ? -1 : b === "All" ? 1 : a.localeCompare(b));
   cuisines.forEach((c) => {
     const chip = el("button", { class: "chip", type: "button", "aria-pressed": String(state.cuisine === c) },
-      c === "All" ? "\u{1F37D}\uFE0F" : emojiFor(c), c);
+      el("span", { class: "chip-icon", "aria-hidden": "true" }, c === "All" ? "\u{1F37D}\uFE0F" : emojiFor(c)), c === "All" ? "All cuisines" : c);
     chip.addEventListener("click", () => { state.cuisine = c; renderChips(); renderGrid(); });
     holder.append(chip);
   });
+  holder.scrollLeft = scrollPosition;
 }
 
 async function showHome(viewVersion) {
   $("searchWrap").hidden = false;
   app.textContent = "";
-  app.append(el("h1", {}, "Restaurants near you"), el("div", { class: "chips", id: "chips" }), el("div", { id: "gridHolder" }));
+  app.append(el("section", { class: "catalog", id: "restaurants", "aria-labelledby": "catalogTitle" },
+    el("div", { class: "catalog-heading" }, el("div", {}, el("p", { class: "eyebrow" }, "So many ways to satisfy a craving"),
+      el("h2", { id: "catalogTitle", tabIndex: -1 }, "Find something delicious.")), el("span", { class: "catalog-accent", "aria-hidden": "true" }, "Made for your appetite ↗")),
+    el("div", { class: "chips", id: "chips", role: "group", "aria-label": "Filter by cuisine" }), el("div", { id: "gridHolder" })));
   $("gridHolder").append(el("div", { class: "grid" }, [1, 2, 3, 4, 5, 6].map(() => el("div", { class: "skeleton" }))));
   try {
     if (!state.restaurants) await loadRestaurants();
@@ -152,7 +190,7 @@ async function showDetail(id, viewVersion) {
           el("span", {}, r.cuisine),
           el("span", {}, r.address),
           el("span", {}, r.is_open ? "Open now" : "Closed right now")))),
-    el("div", { class: "section-head" }, el("h2", {}, "Menu"), addItemBtn),
+    el("div", { class: "section-head" }, el("div", {}, el("h2", {}, "Menu"), el("p", { class: "menu-image-note" }, "Illustrative food photography")), addItemBtn),
     menuHolder);
   try {
     const items = await request("/restaurants/" + id + "/menu");
@@ -163,15 +201,19 @@ async function showDetail(id, viewVersion) {
       menuHolder.append(el("div", { class: "state" }, "This restaurant hasn't added any menu items yet."));
       return;
     }
+    if (items.some((item) => /^Demo menu:/i.test(String(item.description || "").trim()))) {
+      menuHolder.append(el("p", { class: "demo-note" }, el("span", { class: "demo-pill" }, "Demo menu"), "Sample dishes and prices for this project."));
+    }
     const groups = {};
     items.forEach((m) => { (groups[m.category || ""] = groups[m.category || ""] || []).push(m); });
     Object.entries(groups).forEach(([cat, group]) => {
       if (cat) menuHolder.append(el("h2", {}, cat));
       menuHolder.append(el("div", { class: "menu-grid" }, group.map((m) =>
         el("div", { class: "mitem" + (m.is_available ? "" : " unavailable") },
-          el("div", {},
+          el("div", { class: "menu-copy" },
             el("p", { class: "mname" }, m.name, m.is_available ? "" : el("span", { class: "tag" }, "Unavailable")),
-            m.description ? el("p", { class: "mdesc" }, m.description) : ""),
+            menuDescription(m) ? el("p", { class: "mdesc" }, menuDescription(m)) : ""),
+          el("div", { class: "menu-photo" }, foodPhoto(m.name, m.category, r.cuisine)),
           el("div", { class: "mprice" }, money(m.price)), shopping.menuActions(m, r.is_open)))));
     });
   } catch (err) {
@@ -190,6 +232,8 @@ function route() {
   const m = location.hash.match(/^#\/restaurant\/(\d+)/);
   const order = location.hash.match(/^#\/orders\/(\d+)$/);
   $("searchWrap").hidden = !onHome();
+  $("homeHero").hidden = !onHome();
+  document.body.classList.toggle("home-route", onHome());
   updateCreateButton();
   if ((location.hash === "#/signin" || location.hash === "#/register") && client.snapshot().user) {
     location.replace("#/account");
@@ -209,6 +253,12 @@ window.addEventListener("hashchange", route);
 
 // ---------- Search ----------
 $("search").addEventListener("input", (e) => { state.query = e.target.value; renderGrid(); });
+function browseRestaurants() {
+  $("restaurants")?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  $("catalogTitle")?.focus({ preventScroll: true });
+}
+$("searchWrap").addEventListener("submit", (event) => { event.preventDefault(); browseRestaurants(); });
+$("browseRestaurants").addEventListener("click", browseRestaurants);
 $("apiBase").addEventListener("change", () => {
   try {
     client.setBaseURL($("apiBase").value);
