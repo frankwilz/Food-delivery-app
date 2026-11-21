@@ -9,8 +9,11 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.core import config
+from app.demo_menus import seed_demo_menus
+from app.repositories.menu_item_repository import MenuItemRepository
 from app.repositories.restaurant_repository import RestaurantRepository
 from app.schemas.restaurant import RestaurantCreate
+from app.services.menu_service import MenuService
 from app.services.restaurant_service import DuplicateRestaurantError, RestaurantService
 
 DATASET_HANDLE = "polartech/doordash-restaurant-data/versions/1"
@@ -27,6 +30,10 @@ class ImportResult:
     duplicates: int = 0
     invalid: int = 0
     excluded: int = 0
+    menu_items_added: int = 0
+    restaurants_seeded: int = 0
+    restaurants_opened: int = 0
+    menus_skipped: int = 0
 
 
 def load_kaggle_rows() -> list[dict]:
@@ -71,6 +78,8 @@ def import_restaurants(
     *,
     limit: int = 100,
     dry_run: bool = False,
+    demo_menus: bool = False,
+    menu_service: MenuService | None = None,
 ) -> ImportResult:
     """Import the first ``limit`` valid unique source restaurants, append-only.
 
@@ -82,12 +91,17 @@ def import_restaurants(
     """
     if limit < 1:
         raise ValueError("limit must be a positive integer")
+    if demo_menus and menu_service is None:
+        raise ValueError("menu_service is required when demo_menus=True")
     result = ImportResult()
-    seen = {
-        (r["name"].strip().casefold(), r["address"].strip().casefold())
-        for r in service.list_restaurants()
+    existing = service.list_restaurants()
+    by_identity = {
+        (r["name"].strip().casefold(), r["address"].strip().casefold()): r
+        for r in existing
     }
+    next_id = max((r["id"] for r in existing), default=0) + 1
     selected: set[tuple[str, str]] = set()
+    selected_restaurants: list[dict] = []
     for row in rows:
         if len(selected) >= limit:
             break
@@ -113,18 +127,35 @@ def import_restaurants(
             result.duplicates += 1
             continue
         selected.add(key)
-        if key in seen:
+        if key in by_identity:
             result.duplicates += 1
+            selected_restaurants.append(by_identity[key])
             continue
-        if not dry_run:
+        if dry_run:
+            restaurant = {"id": next_id, **data.model_dump()}
+            next_id += 1
+        else:
             try:
-                service.create_restaurant(data)
+                restaurant = service.create_restaurant(data)
             except DuplicateRestaurantError:
                 result.duplicates += 1
-                seen.add(key)
+                # Another creator won the duplicate check; bind to the same domain identity.
+                matching = next(
+                    r for r in service.list_restaurants()
+                    if (r["name"].strip().casefold(), r["address"].strip().casefold()) == key
+                )
+                by_identity[key] = matching
+                selected_restaurants.append(matching)
                 continue
-        seen.add(key)
+        by_identity[key] = restaurant
+        selected_restaurants.append(restaurant)
         result.added += 1
+    if demo_menus:
+        seeded = seed_demo_menus(selected_restaurants, service, menu_service, dry_run=dry_run)
+        result.menu_items_added = seeded.items_added
+        result.restaurants_seeded = seeded.restaurants_seeded
+        result.restaurants_opened = seeded.restaurants_opened
+        result.menus_skipped = seeded.skipped
     return result
 
 
@@ -141,14 +172,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-dir", type=Path, default=config.DATA_DIR, help="Existing app data directory")
     parser.add_argument("--limit", type=_positive_int, default=100, help="First N valid unique source restaurants (default: 100)")
     parser.add_argument("--dry-run", action="store_true", help="Preview counts without saving")
+    parser.add_argument("--demo-menus", action="store_true", help="Add fictional sample menus to selected empty restaurants and open them")
     args = parser.parse_args(argv)
     target = args.data_dir / "restaurants.json"
     if not target.is_file():
         parser.error(f"{target} does not exist; copy the app's data directory first")
+    menu_target = args.data_dir / "menu_items.json"
+    if args.demo_menus and not menu_target.is_file():
+        parser.error(f"{menu_target} does not exist; copy the app's data directory first")
     try:
         rows = load_csv_rows(args.csv) if args.csv else load_kaggle_rows()
         service = RestaurantService(RestaurantRepository(target))
-        result = import_restaurants(rows, service, limit=args.limit, dry_run=args.dry_run)
+        menu_service = MenuService(MenuItemRepository(menu_target), service.repository) if args.demo_menus else None
+        result = import_restaurants(
+            rows, service, limit=args.limit, dry_run=args.dry_run,
+            demo_menus=args.demo_menus, menu_service=menu_service,
+        )
     except (OSError, ValueError, RuntimeError, csv.Error) as exc:
         parser.exit(1, f"Import failed: {exc}\n")
     verb = "Would add" if args.dry_run else "Added"
@@ -157,6 +196,13 @@ def main(argv: list[str] | None = None) -> int:
         f"{result.invalid} invalid rows and {result.excluded} retail rows."
     )
     print(f"Restaurant data: {target.resolve()}")
+    if args.demo_menus:
+        print(
+            f"{'Would add' if args.dry_run else 'Added'} {result.menu_items_added} fictional demo menu items "
+            f"for {result.restaurants_seeded} restaurants; "
+            f"{'would open' if args.dry_run else 'opened'} {result.restaurants_opened}; "
+            f"skipped {result.menus_skipped} protected or existing menus."
+        )
     return 0
 
 
